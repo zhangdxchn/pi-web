@@ -10,6 +10,7 @@ import {
 import type { GitGraphCommit, GitGraphData, GitGraphRef } from "@/lib/git-types";
 import {
   computeGraphRows,
+  formatCommitDate,
   GRAPH_LANE_WIDTH,
   GRAPH_ROW_HEIGHT,
 } from "@/lib/git-graph-model";
@@ -788,7 +789,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
         </div>
 
         {!isMobile && <div style={{ width: 120, padding: "0 8px", flexShrink: 0 }}>作者</div>}
-        {!isMobile && <div style={{ width: 105, padding: "0 8px", flexShrink: 0 }}>日期</div>}
+        {!isMobile && <div style={{ width: 125, padding: "0 8px", flexShrink: 0 }}>日期</div>}
         {!isMobile && <div style={{ width: 70, padding: "0 8px", flexShrink: 0 }}>SHA</div>}
       </div>
 
@@ -900,8 +901,9 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
               {/* Date Cell (Desktop only) */}
               {!isMobile && (
                 <div
+                  title={c.committedAt}
                   style={{
-                    width: 105,
+                    width: 125,
                     flexShrink: 0,
                     padding: "0 8px",
                     color: "var(--text-dim)",
@@ -912,7 +914,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
                     fontVariantNumeric: "tabular-nums",
                   }}
                 >
-                  {c.committedAt.split("T")[0] || c.committedAt}
+                  {formatCommitDate(c.committedAt)}
                 </div>
               )}
 

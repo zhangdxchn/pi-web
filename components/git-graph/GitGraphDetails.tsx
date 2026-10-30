@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { GitCommitDetail, GitGraphCommit } from "@/lib/git-types";
+import { formatCommitDate } from "@/lib/git-graph-model";
 import { getFileIcon } from "../FileIcons";
 
 interface GitGraphDetailsProps {
@@ -161,7 +162,7 @@ export function GitGraphDetails({
               {commit.authorEmail ? ` (${commit.authorEmail})` : ""}
             </span>
             <span>•</span>
-            <span>{commit.committedAt}</span>
+            <span title={commit.committedAt}>{formatCommitDate(commit.committedAt)}</span>
             {commit.parents.length > 0 && (
               <>
                 <span>•</span>

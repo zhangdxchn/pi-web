@@ -16,6 +16,23 @@ export const GRAPH_ROW_HEIGHT = 28;
 export const GRAPH_NODE_RADIUS = 4;
 export const GRAPH_MERGE_RADIUS = 5;
 
+export function formatCommitDate(isoDateStr: string, includeTime = true): string {
+  if (!isoDateStr) return "";
+  try {
+    const d = new Date(isoDateStr);
+    if (isNaN(d.getTime())) return isoDateStr.split("T")[0] || isoDateStr;
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    if (!includeTime) return `${year}-${month}-${day}`;
+    const hours = String(d.getHours()).padStart(2, "0");
+    const minutes = String(d.getMinutes()).padStart(2, "0");
+    return `${year}-${month}-${day} ${hours}:${minutes}`;
+  } catch {
+    return isoDateStr.split("T")[0] || isoDateStr;
+  }
+}
+
 export interface GraphCurve {
   fromLane: number;
   toLane: number;

@@ -22,6 +22,23 @@ async function git(cwd: string, args: string[], maxBuffer = GIT_GRAPH_MAX_BUFFER
   return stdout;
 }
 
+export function formatCommitDate(isoDateStr: string, includeTime = true): string {
+  if (!isoDateStr) return "";
+  try {
+    const d = new Date(isoDateStr);
+    if (isNaN(d.getTime())) return isoDateStr.split("T")[0] || isoDateStr;
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    if (!includeTime) return `${year}-${month}-${day}`;
+    const hours = String(d.getHours()).padStart(2, "0");
+    const minutes = String(d.getMinutes()).padStart(2, "0");
+    return `${year}-${month}-${day} ${hours}:${minutes}`;
+  } catch {
+    return isoDateStr.split("T")[0] || isoDateStr;
+  }
+}
+
 export function assertSafeRef(ref: string): void {
   const trimmed = ref.trim();
   if (!trimmed || trimmed.startsWith("-") || /\s/.test(trimmed) || /[\x00-\x1f\x7f~^:?*\[\\]/.test(trimmed) || trimmed.includes("..") || trimmed.includes("@{")) {
@@ -160,7 +177,6 @@ export async function getGitGraph(
   const args = [
     "log",
     "--date-order",
-    "--topo-order",
     `--max-count=${maxCount + 1}`,
   ];
   if (skip > 0) {
