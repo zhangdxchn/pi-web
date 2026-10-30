@@ -15,6 +15,7 @@ import {
 } from "@/lib/git-graph-model";
 import { GitGraphRowSvg } from "./GitGraphRowSvg";
 import { GitGraphDetails } from "./GitGraphDetails";
+import { useIsMobile } from "@/hooks/useIsMobile";
 
 interface GitGraphViewProps {
   cwd: string;
@@ -27,6 +28,9 @@ const STORAGE_DETAILS_HEIGHT = "pi-web:git-graph-details-height";
 const OVERSCAN = 20;
 
 export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
+  const isMobile = useIsMobile();
+  const pageSize = isMobile ? 150 : 500;
+
   const [commits, setCommits] = useState<GitGraphCommit[]>([]);
   const [branches, setBranches] = useState<string[]>([]);
   const [, setCurrentBranch] = useState<string>("");
@@ -92,7 +96,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
     try {
       const params = new URLSearchParams({
         cwd,
-        maxCount: "1000",
+        maxCount: String(pageSize),
         skip: String(skip),
       });
       if (branchFilter && branchFilter !== "all") {
@@ -128,7 +132,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
         setLoadingMore(false);
       }
     }
-  }, [cwd, branchFilter]);
+  }, [cwd, branchFilter, pageSize]);
 
   useEffect(() => {
     void loadData(0, false);
@@ -634,7 +638,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
         <div
           style={{
             position: "relative",
-            width: graphWidth,
+            width: isMobile ? Math.min(graphWidth, 80) : graphWidth,
             padding: "0 8px",
             display: "flex",
             alignItems: "center",
@@ -643,33 +647,35 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
           }}
         >
           <span>图谱</span>
-          <div
-            onPointerDown={handleGraphResize}
-            onDoubleClick={() => {
-              setGraphWidth(100);
-              try {
-                localStorage.removeItem(STORAGE_GRAPH_WIDTH);
-              } catch {}
-            }}
-            title="拖拽调整宽度，双击重置"
-            style={{
-              position: "absolute",
-              right: 0,
-              top: 0,
-              bottom: 0,
-              width: 6,
-              cursor: "col-resize",
-              zIndex: 10,
-            }}
-          />
+          {!isMobile && (
+            <div
+              onPointerDown={handleGraphResize}
+              onDoubleClick={() => {
+                setGraphWidth(100);
+                try {
+                  localStorage.removeItem(STORAGE_GRAPH_WIDTH);
+                } catch {}
+              }}
+              title="拖拽调整宽度，双击重置"
+              style={{
+                position: "absolute",
+                right: 0,
+                top: 0,
+                bottom: 0,
+                width: 6,
+                cursor: "col-resize",
+                zIndex: 10,
+              }}
+            />
+          )}
         </div>
 
         <div
           style={{
             position: "relative",
-            flex: descWidth ? undefined : 1,
-            width: descWidth ?? undefined,
-            minWidth: 160,
+            flex: isMobile || !descWidth ? 1 : undefined,
+            width: isMobile ? undefined : (descWidth ?? undefined),
+            minWidth: 120,
             padding: "0 8px",
             display: "flex",
             alignItems: "center",
@@ -679,30 +685,32 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
           }}
         >
           <span>描述</span>
-          <div
-            onPointerDown={handleDescResize}
-            onDoubleClick={() => {
-              setDescWidth(null);
-              try {
-                localStorage.removeItem(STORAGE_DESC_WIDTH);
-              } catch {}
-            }}
-            title="拖拽调整宽度，双击重置"
-            style={{
-              position: "absolute",
-              right: 0,
-              top: 0,
-              bottom: 0,
-              width: 6,
-              cursor: "col-resize",
-              zIndex: 10,
-            }}
-          />
+          {!isMobile && (
+            <div
+              onPointerDown={handleDescResize}
+              onDoubleClick={() => {
+                setDescWidth(null);
+                try {
+                  localStorage.removeItem(STORAGE_DESC_WIDTH);
+                } catch {}
+              }}
+              title="拖拽调整宽度，双击重置"
+              style={{
+                position: "absolute",
+                right: 0,
+                top: 0,
+                bottom: 0,
+                width: 6,
+                cursor: "col-resize",
+                zIndex: 10,
+              }}
+            />
+          )}
         </div>
 
-        <div style={{ width: 120, padding: "0 8px", flexShrink: 0 }}>作者</div>
-        <div style={{ width: 105, padding: "0 8px", flexShrink: 0 }}>日期</div>
-        <div style={{ width: 70, padding: "0 8px", flexShrink: 0 }}>SHA</div>
+        {!isMobile && <div style={{ width: 120, padding: "0 8px", flexShrink: 0 }}>作者</div>}
+        {!isMobile && <div style={{ width: 105, padding: "0 8px", flexShrink: 0 }}>日期</div>}
+        {!isMobile && <div style={{ width: 70, padding: "0 8px", flexShrink: 0 }}>SHA</div>}
       </div>
 
       {/* 3. Virtual Scroll Body */}
@@ -749,7 +757,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
               {/* Graph Cell */}
               <div
                 style={{
-                  width: graphWidth,
+                  width: isMobile ? Math.min(graphWidth, 80) : graphWidth,
                   height: GRAPH_ROW_HEIGHT,
                   flexShrink: 0,
                   display: "flex",
@@ -767,9 +775,9 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
               {/* Description Cell */}
               <div
                 style={{
-                  flex: descWidth ? undefined : 1,
-                  width: descWidth ?? undefined,
-                  minWidth: 160,
+                  flex: isMobile || !descWidth ? 1 : undefined,
+                  width: isMobile ? undefined : (descWidth ?? undefined),
+                  minWidth: 120,
                   display: "flex",
                   alignItems: "center",
                   gap: 6,
@@ -793,56 +801,62 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
                 </span>
               </div>
 
-              {/* Author Cell */}
-              <div
-                title={`${c.author} (${c.authorEmail})`}
-                style={{
-                  width: 120,
-                  flexShrink: 0,
-                  padding: "0 8px",
-                  color: "var(--text-muted)",
-                  fontSize: 11,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {c.author}
-              </div>
+              {/* Author Cell (Desktop only) */}
+              {!isMobile && (
+                <div
+                  title={`${c.author} (${c.authorEmail})`}
+                  style={{
+                    width: 120,
+                    flexShrink: 0,
+                    padding: "0 8px",
+                    color: "var(--text-muted)",
+                    fontSize: 11,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {c.author}
+                </div>
+              )}
 
-              {/* Date Cell */}
-              <div
-                style={{
-                  width: 105,
-                  flexShrink: 0,
-                  padding: "0 8px",
-                  color: "var(--text-dim)",
-                  fontSize: 11,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  fontVariantNumeric: "tabular-nums",
-                }}
-              >
-                {c.committedAt.split("T")[0] || c.committedAt}
-              </div>
+              {/* Date Cell (Desktop only) */}
+              {!isMobile && (
+                <div
+                  style={{
+                    width: 105,
+                    flexShrink: 0,
+                    padding: "0 8px",
+                    color: "var(--text-dim)",
+                    fontSize: 11,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  {c.committedAt.split("T")[0] || c.committedAt}
+                </div>
+              )}
 
-              {/* SHA Cell */}
-              <div
-                style={{
-                  width: 70,
-                  flexShrink: 0,
-                  padding: "0 8px",
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 10.5,
-                  color: "var(--text-dim)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {c.shortSha}
-              </div>
+              {/* SHA Cell (Desktop only) */}
+              {!isMobile && (
+                <div
+                  style={{
+                    width: 70,
+                    flexShrink: 0,
+                    padding: "0 8px",
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10.5,
+                    color: "var(--text-dim)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {c.shortSha}
+                </div>
+              )}
             </div>
           );
         })}
@@ -891,7 +905,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <polyline points="6 9 12 15 18 9" />
                   </svg>
-                  <span>加载更早提交 (+1000)</span>
+                  <span>加载更早提交 (+{pageSize})</span>
                 </>
               )}
             </button>
