@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { GitGraphData, GitGraphRef } from "@/lib/git-types";
+import type { GitGraphCommit, GitGraphData, GitGraphRef } from "@/lib/git-types";
 import {
   computeGraphRows,
   GRAPH_LANE_WIDTH,
@@ -27,14 +27,20 @@ const STORAGE_DETAILS_HEIGHT = "pi-web:git-graph-details-height";
 const OVERSCAN = 20;
 
 export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
-  const [data, setData] = useState<GitGraphData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [commits, setCommits] = useState<GitGraphCommit[]>([]);
+  const [branches, setBranches] = useState<string[]>([]);
+  const [, setCurrentBranch] = useState<string>("");
+  const [hasMore, setHasMore] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
+  const [isGitRepo, setIsGitRepo] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
   const [selectedSha, setSelectedSha] = useState<string | null>(null);
   const [branchFilter, setBranchFilter] = useState<string>("all");
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const generationRef = useRef(0);
 
   const [graphWidth, setGraphWidth] = useState<number>(() => {
     try {
@@ -73,12 +79,22 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
   const [scrollTop, setScrollTop] = useState(0);
   const [clientHeight, setClientHeight] = useState(600);
 
-  // Fetch commits
-  const fetchGraph = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  // Fetch commits (supports initial load and pagination append)
+  const loadData = useCallback(async (skip = 0, isAppend = false) => {
+    const gen = ++generationRef.current;
+    if (!isAppend) {
+      setLoading(true);
+      setError(null);
+    } else {
+      setLoadingMore(true);
+    }
+
     try {
-      const params = new URLSearchParams({ cwd });
+      const params = new URLSearchParams({
+        cwd,
+        maxCount: "1000",
+        skip: String(skip),
+      });
       if (branchFilter && branchFilter !== "all") {
         params.set("branch", branchFilter);
       }
@@ -88,26 +104,47 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
         throw new Error(err.error || `HTTP ${res.status}`);
       }
       const resData = (await res.json()) as GitGraphData;
-      setData(resData);
-      if (resData.commits.length > 0 && !selectedSha) {
-        setSelectedSha(resData.commits[0].sha);
+      if (generationRef.current !== gen) return;
+
+      setIsGitRepo(resData.isGitRepository);
+      setBranches(resData.branches);
+      setCurrentBranch(resData.currentBranch);
+      setHasMore(resData.hasMore);
+
+      if (isAppend) {
+        setCommits((prev) => [...prev, ...resData.commits]);
+      } else {
+        setCommits(resData.commits);
+        if (resData.commits.length > 0) {
+          setSelectedSha((cur) => cur ?? resData.commits[0].sha);
+        }
       }
     } catch (e) {
+      if (generationRef.current !== gen) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (generationRef.current === gen) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
-  }, [cwd, branchFilter, selectedSha]);
+  }, [cwd, branchFilter]);
 
   useEffect(() => {
-    void fetchGraph();
-  }, [fetchGraph]);
+    void loadData(0, false);
+  }, [loadData]);
+
+  const handleLoadMore = useCallback(() => {
+    if (hasMore && !loadingMore && !loading) {
+      void loadData(commits.length, true);
+    }
+  }, [hasMore, loadingMore, loading, commits.length, loadData]);
 
   // Compute topological graph rows
   const allRows = useMemo(() => {
-    if (!data || !data.commits) return [];
-    return computeGraphRows(data.commits);
-  }, [data]);
+    if (commits.length === 0) return [];
+    return computeGraphRows(commits);
+  }, [commits]);
 
   // Filter rows based on search
   const filteredRows = useMemo(() => {
@@ -123,13 +160,20 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
     });
   }, [allRows, searchQuery]);
 
-  // Scroll listener for virtual rendering
+  // Scroll listener for virtual rendering and infinite auto-loading
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
 
     const onScroll = () => {
       setScrollTop(el.scrollTop);
+      // Automatically load more when scrolling within 250px of the bottom
+      if (hasMore && !loadingMore && !loading) {
+        const distanceToBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
+        if (distanceToBottom < 250) {
+          handleLoadMore();
+        }
+      }
     };
 
     const observer = new ResizeObserver((entries) => {
@@ -145,7 +189,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
       el.removeEventListener("scroll", onScroll);
       observer.disconnect();
     };
-  }, []);
+  }, [hasMore, loadingMore, loading, handleLoadMore]);
 
   // Compute virtual slice
   const startIndex = Math.max(0, Math.floor(scrollTop / GRAPH_ROW_HEIGHT) - OVERSCAN);
@@ -157,9 +201,9 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
   const paddingBottom = Math.max(0, (filteredRows.length - endIndex) * GRAPH_ROW_HEIGHT);
 
   const selectedCommit = useMemo(() => {
-    if (!data || !selectedSha) return null;
-    return data.commits.find((c) => c.sha === selectedSha) ?? null;
-  }, [data, selectedSha]);
+    if (!selectedSha) return null;
+    return commits.find((c) => c.sha === selectedSha) ?? null;
+  }, [commits, selectedSha]);
 
   const handleSelectSha = (sha: string) => {
     setSelectedSha(sha);
@@ -284,7 +328,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
     });
   };
 
-  if (loading && !data) {
+  if (loading && commits.length === 0) {
     return (
       <div
         style={{
@@ -301,7 +345,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
     );
   }
 
-  if (error || (data && !data.isGitRepository)) {
+  if (error || !isGitRepo) {
     return (
       <div
         style={{
@@ -322,7 +366,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
         </span>
         <button
           type="button"
-          onClick={fetchGraph}
+          onClick={() => void loadData(0, false)}
           style={{
             padding: "4px 10px",
             background: "var(--bg-panel)",
@@ -443,7 +487,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
               >
                 全部分支 (All Branches)
               </div>
-              {data?.branches.map((b) => (
+              {branches.map((b) => (
                 <div
                   key={b}
                   onClick={() => {
@@ -460,7 +504,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
                     background: branchFilter === b ? "var(--bg-selected)" : "transparent",
                   }}
                 >
-                  {b} {b === data.currentBranch ? " (当前)" : ""}
+                  {b}
                 </div>
               ))}
             </div>
@@ -540,11 +584,11 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
               fontVariantNumeric: "tabular-nums",
             }}
           >
-            {filteredRows.length} 个提交
+            {filteredRows.length} 个提交{hasMore ? " (未完)" : ""}
           </span>
           <button
             type="button"
-            onClick={fetchGraph}
+            onClick={() => void loadData(0, false)}
             title="刷新图谱"
             style={{
               width: 24,
@@ -803,6 +847,74 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
           );
         })}
         <div style={{ height: paddingBottom }} />
+
+        {/* Load more footer button / auto-trigger indicator */}
+        {hasMore && (
+          <div
+            style={{
+              padding: "10px 16px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              borderTop: "1px solid var(--border)",
+              background: "var(--bg-panel)",
+            }}
+          >
+            <button
+              type="button"
+              disabled={loadingMore}
+              onClick={handleLoadMore}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "6px 14px",
+                background: "var(--bg)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                fontSize: 12,
+                color: "var(--text)",
+                cursor: loadingMore ? "wait" : "pointer",
+                fontWeight: 500,
+              }}
+            >
+              {loadingMore ? (
+                <>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ animation: "spin 0.8s linear infinite" }}>
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                  </svg>
+                  <span>正在加载更多提交…</span>
+                </>
+              ) : (
+                <>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                  <span>加载更早提交 (+1000)</span>
+                </>
+              )}
+            </button>
+            <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
+              已加载 {commits.length} 个
+            </span>
+          </div>
+        )}
+
+        {!hasMore && commits.length > 0 && (
+          <div
+            style={{
+              padding: "12px 16px",
+              textAlign: "center",
+              fontSize: 11,
+              color: "var(--text-dim)",
+              borderTop: "1px solid var(--border)",
+              background: "var(--bg-panel)",
+            }}
+          >
+            已加载全部 {commits.length} 个提交 · 达到最初提交
+          </div>
+        )}
       </div>
 
       {/* 4. Bottom Commit Details Drawer */}

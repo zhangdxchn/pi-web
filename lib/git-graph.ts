@@ -154,7 +154,7 @@ export async function getGitGraph(
     listLocalGitBranches(repoRoot),
   ]);
 
-  const maxCount = Math.max(1, Math.min(1000, options?.maxCount ?? 300));
+  const maxCount = Math.max(1, Math.min(10000, options?.maxCount ?? 1000));
   const skip = Math.max(0, options?.skip ?? 0);
 
   const args = [
