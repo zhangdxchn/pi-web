@@ -11,7 +11,9 @@ import type { GitGraphCommit, GitGraphData, GitGraphRef } from "@/lib/git-types"
 import {
   computeGraphRows,
   formatCommitDate,
+  getRefBadgeStyle,
   GRAPH_LANE_WIDTH,
+  GRAPH_PALETTE,
   GRAPH_ROW_HEIGHT,
 } from "@/lib/git-graph-model";
 import { GitGraphRowSvg } from "./GitGraphRowSvg";
@@ -41,7 +43,12 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
   const [isGitRepo, setIsGitRepo] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [selectedSha, setSelectedSha] = useState<string | null>(null);
+  const [selectedSha, rawSetSelectedSha] = useState<string | null>(null);
+  const setSelectedSha = useCallback((val: string | null | ((cur: string | null) => string | null)) => {
+    console.log('[HUNT DEBUG] setSelectedSha called with:', typeof val === 'function' ? 'function' : val);
+    console.log(new Error().stack);
+    rawSetSelectedSha(val);
+  }, []);
   const [branchFilter, setBranchFilter] = useState<string>("all");
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -94,6 +101,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
 
   // 1. Initial Load (runs when cwd, branchFilter, or pageSize changes)
   const loadInitial = useCallback(async () => {
+    console.log('[HUNT DEBUG] loadInitial called, cwd:', cwd, 'branchFilter:', branchFilter, 'pageSize:', pageSize);
     const gen = ++generationRef.current;
     inFlightRef.current = true;
     setLoading(true);
@@ -264,6 +272,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
   }, [commits, selectedSha]);
 
   const handleSelectSha = (sha: string) => {
+    console.log('[HUNT DEBUG] handleSelectSha called with sha:', sha);
     setSelectedSha(sha);
     const targetIdx = filteredRows.findIndex((r) => r.commit.sha === sha);
     if (targetIdx !== -1 && scrollContainerRef.current) {
@@ -342,30 +351,10 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
     window.addEventListener("pointerup", onPointerUp);
   };
 
-  const renderRefBadges = (refs: GitGraphRef[]) => {
+  const renderRefBadges = (refs: GitGraphRef[], curveColor: string) => {
     if (!refs || refs.length === 0) return null;
     return refs.map((ref) => {
-      let bg = "var(--bg-panel)";
-      let color = "var(--text)";
-      let border = "1px solid var(--border)";
-
-      if (ref.type === "head") {
-        bg = "#064e3b";
-        color = "#6ee7b7";
-        border = "1px solid #047857";
-      } else if (ref.type === "tag") {
-        bg = "#451a03";
-        color = "#fcd34d";
-        border = "1px solid #78350f";
-      } else if (ref.type === "remote") {
-        bg = "transparent";
-        color = "var(--text-dim)";
-        border = "1px dashed var(--border)";
-      } else if (ref.current) {
-        border = "1px solid var(--accent)";
-        color = "var(--accent)";
-        bg = "var(--bg-selected)";
-      }
+      const badgeStyle = getRefBadgeStyle(ref, curveColor);
 
       return (
         <span
@@ -378,11 +367,11 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
             borderRadius: 4,
             fontSize: 10.5,
             lineHeight: "14px",
-            fontWeight: 500,
+            fontWeight: badgeStyle.fontWeight ?? 500,
             flexShrink: 0,
-            background: bg,
-            color,
-            border,
+            background: badgeStyle.bg,
+            color: badgeStyle.color,
+            border: badgeStyle.border,
           }}
         >
           {ref.type === "head" && (
@@ -848,6 +837,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
         {visibleRows.map((row) => {
           const c = row.commit;
           const isSelected = c.sha === selectedSha;
+          const curveColor = GRAPH_PALETTE[row.colorIndex] ?? "var(--accent)";
 
           return (
             <div
@@ -904,7 +894,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
                   borderRight: !isMobile ? "1px solid var(--border)" : undefined,
                 }}
               >
-                {renderRefBadges(c.refs)}
+                {renderRefBadges(c.refs, curveColor)}
                 <span
                   title={c.subject}
                   style={{
@@ -1062,7 +1052,10 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
               localStorage.setItem(STORAGE_DETAILS_HEIGHT, String(h));
             } catch {}
           }}
-          onClose={() => setSelectedSha(null)}
+          onClose={() => {
+            console.log('[HUNT DEBUG] onClose called!');
+            setSelectedSha(null);
+          }}
           onSelectSha={handleSelectSha}
           onOpenFileDiff={onOpenFileDiff}
         />

@@ -1,4 +1,4 @@
-import type { GitGraphCommit } from "./git-types";
+import type { GitGraphCommit, GitGraphRef } from "./git-types";
 
 export const GRAPH_PALETTE: readonly string[] = [
   "var(--accent)",
@@ -15,6 +15,51 @@ export const GRAPH_LANE_WIDTH = 16;
 export const GRAPH_ROW_HEIGHT = 28;
 export const GRAPH_NODE_RADIUS = 4;
 export const GRAPH_MERGE_RADIUS = 5;
+
+export interface RefBadgeStyle {
+  bg: string;
+  color: string;
+  border: string;
+  fontWeight?: number;
+}
+
+export function getRefBadgeStyle(ref: GitGraphRef, curveColor: string): RefBadgeStyle {
+  if (ref.type === "head") {
+    return {
+      bg: "#064e3b",
+      color: "#6ee7b7",
+      border: "1px solid #047857",
+      fontWeight: 500,
+    };
+  }
+
+  if (ref.type === "tag") {
+    return {
+      bg: "#451a03",
+      color: "#fcd34d",
+      border: "1px solid #78350f",
+      fontWeight: 500,
+    };
+  }
+
+  if (ref.type === "remote") {
+    return {
+      bg: `color-mix(in srgb, ${curveColor} 8%, transparent)`,
+      color: curveColor,
+      border: `1px dashed ${curveColor}`,
+      fontWeight: 500,
+    };
+  }
+
+  return {
+    bg: ref.current
+      ? `color-mix(in srgb, ${curveColor} 20%, var(--bg-panel))`
+      : `color-mix(in srgb, ${curveColor} 10%, var(--bg-panel))`,
+    color: curveColor,
+    border: `1px solid ${curveColor}`,
+    fontWeight: ref.current ? 600 : 500,
+  };
+}
 
 export function formatCommitDate(isoDateStr: string, includeTime = true): string {
   if (!isoDateStr) return "";

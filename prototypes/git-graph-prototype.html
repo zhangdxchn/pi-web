@@ -1539,7 +1539,7 @@
       btnCloseTweaks: document.getElementById("btn-close-tweaks"),
     };
 
-    function renderRefBadges(refs) {
+    function renderRefBadges(refs, curveColor) {
       if (!refs || refs.length === 0) return "";
       return refs.map(r => {
         let cls = `ref-badge ${r.type}`;
@@ -1547,7 +1547,14 @@
         let icon = "";
         if (r.type === "head") icon = `<span style="display:inline-block; width:5px; height:5px; border-radius:50%; background:#34d399;"></span>`;
         else if (r.type === "tag") icon = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><path d="M7 7h.01"/></svg>`;
-        return `<span class="${cls}">${icon}${r.name}</span>`;
+        let inlineStyle = "";
+        if (r.type === "remote") {
+          inlineStyle = `style="color:${curveColor}; border-color:${curveColor}; background:color-mix(in srgb, ${curveColor} 8%, transparent);"`;
+        } else if (r.type === "branch") {
+          const bg = r.current ? `color-mix(in srgb, ${curveColor} 20%, var(--bg-panel))` : `color-mix(in srgb, ${curveColor} 10%, var(--bg-panel))`;
+          inlineStyle = `style="color:${curveColor}; border-color:${curveColor}; background:${bg}; font-weight:${r.current ? 600 : 500};"`;
+        }
+        return `<span class="${cls}" ${inlineStyle}>${icon}${r.name}</span>`;
       }).join("");
     }
 
@@ -1577,7 +1584,8 @@
         if (isVisible) visibleCount++;
 
         const svgWidth = Math.max(row.maxLanes * CFG.laneWidth + 8, state.graphColWidth);
-        const refHtml = renderRefBadges(c.refs);
+        const curveColor = GRAPH_PALETTE[row.colorIndex] || "var(--accent)";
+        const refHtml = renderRefBadges(c.refs, curveColor);
 
         return `
           <div class="graph-row ${isSelected ? 'selected' : ''} ${!isVisible ? 'filtered-out' : ''}"
