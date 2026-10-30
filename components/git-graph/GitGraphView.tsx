@@ -46,6 +46,11 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const generationRef = useRef(0);
+  const inFlightRef = useRef(false);
+  const commitsRef = useRef<GitGraphCommit[]>([]);
+  commitsRef.current = commits;
+  const hasMoreRef = useRef(hasMore);
+  hasMoreRef.current = hasMore;
 
   const [isDraggingGraph, setIsDraggingGraph] = useState(false);
   const [isDraggingDesc, setIsDraggingDesc] = useState(false);
@@ -87,21 +92,19 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
   const [scrollTop, setScrollTop] = useState(0);
   const [clientHeight, setClientHeight] = useState(600);
 
-  // Fetch commits (supports initial load and pagination append)
-  const loadData = useCallback(async (skip = 0, isAppend = false) => {
+  // 1. Initial Load (runs when cwd, branchFilter, or pageSize changes)
+  const loadInitial = useCallback(async () => {
     const gen = ++generationRef.current;
-    if (!isAppend) {
-      setLoading(true);
-      setError(null);
-    } else {
-      setLoadingMore(true);
-    }
+    inFlightRef.current = true;
+    setLoading(true);
+    setLoadingMore(false);
+    setError(null);
 
     try {
       const params = new URLSearchParams({
         cwd,
         maxCount: String(pageSize),
-        skip: String(skip),
+        skip: "0",
       });
       if (branchFilter && branchFilter !== "all") {
         params.set("branch", branchFilter);
@@ -118,35 +121,72 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
       setBranches(resData.branches);
       setCurrentBranch(resData.currentBranch);
       setHasMore(resData.hasMore);
+      hasMoreRef.current = resData.hasMore;
+      setCommits(resData.commits);
+      commitsRef.current = resData.commits;
 
-      if (isAppend) {
-        setCommits((prev) => [...prev, ...resData.commits]);
-      } else {
-        setCommits(resData.commits);
-        if (resData.commits.length > 0) {
-          setSelectedSha((cur) => cur ?? resData.commits[0].sha);
-        }
+      if (resData.commits.length > 0) {
+        setSelectedSha((cur) => cur ?? resData.commits[0].sha);
       }
     } catch (e) {
       if (generationRef.current !== gen) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       if (generationRef.current === gen) {
+        inFlightRef.current = false;
         setLoading(false);
-        setLoadingMore(false);
       }
     }
   }, [cwd, branchFilter, pageSize]);
 
   useEffect(() => {
-    void loadData(0, false);
-  }, [loadData]);
+    void loadInitial();
+  }, [loadInitial]);
 
-  const handleLoadMore = useCallback(() => {
-    if (hasMore && !loadingMore && !loading) {
-      void loadData(commits.length, true);
+  // 2. Append Load (runs on scroll to bottom or click "Load More")
+  const handleLoadMore = useCallback(async () => {
+    // Synchronous guard: if already fetching or no more commits, immediately ignore
+    if (inFlightRef.current || !hasMoreRef.current) return;
+    inFlightRef.current = true;
+    setLoadingMore(true);
+
+    const curGen = generationRef.current;
+    const skip = commitsRef.current.length;
+
+    try {
+      const params = new URLSearchParams({
+        cwd,
+        maxCount: String(pageSize),
+        skip: String(skip),
+      });
+      if (branchFilter && branchFilter !== "all") {
+        params.set("branch", branchFilter);
+      }
+      const res = await fetch(`/api/git/graph?${params.toString()}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const resData = (await res.json()) as GitGraphData;
+      // Only commit if the user didn't switch branches or cwd in the meantime
+      if (generationRef.current === curGen) {
+        setCommits((prev) => {
+          const next = [...prev, ...resData.commits];
+          commitsRef.current = next;
+          return next;
+        });
+        setHasMore(resData.hasMore);
+        hasMoreRef.current = resData.hasMore;
+      }
+    } catch (e) {
+      if (generationRef.current === curGen) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    } finally {
+      inFlightRef.current = false;
+      setLoadingMore(false);
     }
-  }, [hasMore, loadingMore, loading, commits.length, loadData]);
+  }, [cwd, branchFilter, pageSize]);
 
   // Compute topological graph rows
   const allRows = useMemo(() => {
@@ -180,21 +220,24 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
     });
   }, [allRows, searchQuery]);
 
-  // Scroll listener for virtual rendering and infinite auto-loading
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    setScrollTop(el.scrollTop);
+    // Automatically load more when scrolling within 300px of the bottom
+    if (hasMoreRef.current && !inFlightRef.current) {
+      const distanceToBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
+      if (distanceToBottom < 300) {
+        void handleLoadMore();
+      }
+    }
+  };
+
+  // ResizeObserver for measuring viewport height
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
 
-    const onScroll = () => {
-      setScrollTop(el.scrollTop);
-      // Automatically load more when scrolling within 250px of the bottom
-      if (hasMore && !loadingMore && !loading) {
-        const distanceToBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
-        if (distanceToBottom < 250) {
-          handleLoadMore();
-        }
-      }
-    };
+    setClientHeight(el.clientHeight);
 
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
@@ -202,14 +245,9 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
       }
     });
 
-    el.addEventListener("scroll", onScroll, { passive: true });
     observer.observe(el);
-
-    return () => {
-      el.removeEventListener("scroll", onScroll);
-      observer.disconnect();
-    };
-  }, [hasMore, loadingMore, loading, handleLoadMore]);
+    return () => observer.disconnect();
+  }, [loading, commits.length]);
 
   // Compute virtual slice
   const startIndex = Math.max(0, Math.floor(scrollTop / GRAPH_ROW_HEIGHT) - OVERSCAN);
@@ -402,7 +440,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
         </span>
         <button
           type="button"
-          onClick={() => void loadData(0, false)}
+          onClick={() => void loadInitial()}
           style={{
             padding: "4px 10px",
             background: "var(--bg-panel)",
@@ -624,7 +662,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
           </span>
           <button
             type="button"
-            onClick={() => void loadData(0, false)}
+            onClick={() => void loadInitial()}
             title="刷新图谱"
             style={{
               width: 24,
@@ -796,6 +834,8 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
       {/* 3. Virtual Scroll Body */}
       <div
         ref={scrollContainerRef}
+        onScroll={handleScroll}
+        data-testid="git-graph-body"
         style={{
           flex: 1,
           overflowY: "auto",
