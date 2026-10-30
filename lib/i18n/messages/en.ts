@@ -271,6 +271,8 @@ export const enLocale: LocalePlugin = {
     "session.gitBranch": "Git Branch",
     "session.gitWorktree": "Worktree",
     "gitGraph.title": "Git Graph",
+    "gitGraph.showRemotes": "Show Remote Branches",
+    "gitGraph.currentBranch": "Current Branch",
     "gitGraph.loadMore": "Load older commits",
     "gitGraph.loadingMore": "Loading older commits…",
     "gitGraph.allBranches": "All branches",

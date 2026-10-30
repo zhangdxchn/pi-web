@@ -163,7 +163,7 @@ export function GitGraphDetails({
             </span>
             <span>•</span>
             <span title={commit.committedAt}>{formatCommitDate(commit.committedAt)}</span>
-            {commit.parents.length > 0 && (
+            {commit.parents.length > 0 ? (
               <>
                 <span>•</span>
                 <span>父提交:</span>
@@ -191,6 +191,11 @@ export function GitGraphDetails({
                     </button>
                   );
                 })}
+              </>
+            ) : (
+              <>
+                <span>•</span>
+                <span>父提交: <span style={{ color: "var(--text-dim)", fontStyle: "italic" }}>(根提交 · 无父提交)</span></span>
               </>
             )}
           </div>

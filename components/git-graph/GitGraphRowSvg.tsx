@@ -113,6 +113,17 @@ export const GitGraphRowSvg = memo(function GitGraphRowSvg({
             fill={nodeColor}
           />
         </>
+      ) : row.commit.parents.length === 0 && !row.hasTopStraight ? (
+        <rect
+          x={x(row.lane) - GRAPH_NODE_RADIUS}
+          y={yCenter - GRAPH_NODE_RADIUS}
+          width={GRAPH_NODE_RADIUS * 2}
+          height={GRAPH_NODE_RADIUS * 2}
+          rx={1.5}
+          fill={nodeColor}
+          stroke="var(--bg)"
+          strokeWidth={1.2}
+        />
       ) : (
         <circle
           cx={x(row.lane)}

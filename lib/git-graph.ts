@@ -152,7 +152,7 @@ export async function listLocalGitBranches(repoRoot: string): Promise<string[]> 
 
 export async function getGitGraph(
   cwd: string,
-  options?: { branch?: string; maxCount?: number; skip?: number },
+  options?: { branch?: string; showRemotes?: boolean; maxCount?: number; skip?: number },
 ): Promise<GitGraphData> {
   const repoRoot = await findGitRepositoryRoot(cwd);
   if (!repoRoot) {
@@ -186,10 +186,18 @@ export async function getGitGraph(
 
   if (options?.branch && options.branch.trim() && options.branch.trim() !== "all") {
     const branch = options.branch.trim();
-    assertSafeRef(branch);
-    args.push("--end-of-options", branch);
+    if (branch === "current") {
+      args.push("HEAD");
+    } else {
+      assertSafeRef(branch);
+      args.push("--end-of-options", branch);
+    }
   } else {
-    args.push("--branches", "--tags", "--remotes", "HEAD");
+    args.push("--branches");
+    if (options?.showRemotes !== false) {
+      args.push("--remotes");
+    }
+    args.push("--tags", "HEAD");
   }
 
   let logOutput = "";

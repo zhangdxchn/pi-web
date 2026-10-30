@@ -271,6 +271,8 @@ export const zhTWLocale: LocalePlugin = {
     "session.gitBranch": "Git 分支",
     "session.gitWorktree": "Worktree",
     "gitGraph.title": "Git Graph 圖譜",
+    "gitGraph.showRemotes": "顯示遠端分支",
+    "gitGraph.currentBranch": "目前分支",
     "session.copyProjectDir": "複製專案目錄",
     "session.copyGitBranch": "複製 Git 分支",
     "session.copyGitWorktree": "複製 Worktree 路徑",

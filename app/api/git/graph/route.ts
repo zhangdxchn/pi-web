@@ -51,16 +51,19 @@ export async function GET(request: NextRequest) {
 
     // 2. Commit graph query
     const branch = request.nextUrl.searchParams.get("branch")?.trim() || undefined;
-    if (branch && branch !== "all") {
+    if (branch && branch !== "all" && branch !== "current") {
       assertSafeRef(branch);
     }
+
+    const showRemotesParam = request.nextUrl.searchParams.get("showRemotes");
+    const showRemotes = showRemotesParam === null ? undefined : showRemotesParam === "true" || showRemotesParam === "1";
 
     const maxCountParam = request.nextUrl.searchParams.get("maxCount");
     const maxCount = maxCountParam ? Number(maxCountParam) : undefined;
     const skipParam = request.nextUrl.searchParams.get("skip");
     const skip = skipParam ? Number(skipParam) : undefined;
 
-    const data = await getGitGraph(cwd, { branch, maxCount, skip });
+    const data = await getGitGraph(cwd, { branch, showRemotes, maxCount, skip });
     return NextResponse.json(data);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

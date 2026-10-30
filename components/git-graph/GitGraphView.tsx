@@ -28,6 +28,7 @@ interface GitGraphViewProps {
 const STORAGE_GRAPH_WIDTH = "pi-web:git-graph-col-graph-width";
 const STORAGE_DESC_WIDTH = "pi-web:git-graph-col-desc-width";
 const STORAGE_DETAILS_HEIGHT = "pi-web:git-graph-details-height";
+const STORAGE_SHOW_REMOTES = "pi-web:git-graph-show-remotes";
 const OVERSCAN = 20;
 
 export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
@@ -36,19 +37,22 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
 
   const [commits, setCommits] = useState<GitGraphCommit[]>([]);
   const [branches, setBranches] = useState<string[]>([]);
-  const [, setCurrentBranch] = useState<string>("");
+  const [currentBranch, setCurrentBranch] = useState<string>("");
   const [hasMore, setHasMore] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [isGitRepo, setIsGitRepo] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [selectedSha, rawSetSelectedSha] = useState<string | null>(null);
-  const setSelectedSha = useCallback((val: string | null | ((cur: string | null) => string | null)) => {
-    console.log('[HUNT DEBUG] setSelectedSha called with:', typeof val === 'function' ? 'function' : val);
-    console.log(new Error().stack);
-    rawSetSelectedSha(val);
-  }, []);
+  const [showRemotes, setShowRemotes] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_SHOW_REMOTES);
+      if (saved !== null) return saved === "true";
+    } catch {}
+    return true;
+  });
+
+  const [selectedSha, setSelectedSha] = useState<string | null>(null);
   const [branchFilter, setBranchFilter] = useState<string>("all");
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -99,9 +103,8 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
   const [scrollTop, setScrollTop] = useState(0);
   const [clientHeight, setClientHeight] = useState(600);
 
-  // 1. Initial Load (runs when cwd, branchFilter, or pageSize changes)
+  // 1. Initial Load (runs when cwd, branchFilter, showRemotes or pageSize changes)
   const loadInitial = useCallback(async () => {
-    console.log('[HUNT DEBUG] loadInitial called, cwd:', cwd, 'branchFilter:', branchFilter, 'pageSize:', pageSize);
     const gen = ++generationRef.current;
     inFlightRef.current = true;
     setLoading(true);
@@ -113,6 +116,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
         cwd,
         maxCount: String(pageSize),
         skip: "0",
+        showRemotes: String(showRemotes),
       });
       if (branchFilter && branchFilter !== "all") {
         params.set("branch", branchFilter);
@@ -145,7 +149,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
         setLoading(false);
       }
     }
-  }, [cwd, branchFilter, pageSize]);
+  }, [cwd, branchFilter, showRemotes, pageSize]);
 
   useEffect(() => {
     void loadInitial();
@@ -166,6 +170,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
         cwd,
         maxCount: String(pageSize),
         skip: String(skip),
+        showRemotes: String(showRemotes),
       });
       if (branchFilter && branchFilter !== "all") {
         params.set("branch", branchFilter);
@@ -194,7 +199,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
       inFlightRef.current = false;
       setLoadingMore(false);
     }
-  }, [cwd, branchFilter, pageSize]);
+  }, [cwd, branchFilter, showRemotes, pageSize]);
 
   // Compute topological graph rows
   const allRows = useMemo(() => {
@@ -505,7 +510,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
               <circle cx="18" cy="9" r="3" />
               <path d="M6 9v6M18 12a9 9 0 0 1-9 9" />
             </svg>
-            <span>{branchFilter === "all" ? "全部分支" : branchFilter}</span>
+            <span>{branchFilter === "all" ? "全部分支" : branchFilter === "current" ? "当前分支" : branchFilter}</span>
             <svg
               width="10"
               height="10"
@@ -524,7 +529,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
                 position: "absolute",
                 top: 28,
                 left: 0,
-                width: 220,
+                width: 240,
                 background: "var(--bg-panel)",
                 border: "1px solid var(--border)",
                 borderRadius: 6,
@@ -550,6 +555,23 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
               >
                 全部分支 (All Branches)
               </div>
+              <div
+                onClick={() => {
+                  setBranchFilter("current");
+                  setBranchMenuOpen(false);
+                }}
+                style={{
+                  padding: "5px 8px",
+                  borderRadius: 4,
+                  fontSize: 11.5,
+                  cursor: "pointer",
+                  color: branchFilter === "current" ? "var(--accent)" : "var(--text)",
+                  fontWeight: branchFilter === "current" ? 600 : 400,
+                  background: branchFilter === "current" ? "var(--bg-selected)" : "transparent",
+                }}
+              >
+                当前分支 (Current Branch{currentBranch ? `: ${currentBranch}` : ""})
+              </div>
               {branches.map((b) => (
                 <div
                   key={b}
@@ -573,6 +595,37 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
             </div>
           )}
         </div>
+
+        {/* Show Remote Branches Toggle (aligned with vscode-git-graph) */}
+        {!isMobile && (
+          <label
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: 11,
+              color: "var(--text-muted)",
+              cursor: "pointer",
+              userSelect: "none",
+              whiteSpace: "nowrap",
+            }}
+            title="包含或隐藏远端分支 (Show Remote Branches)"
+          >
+            <input
+              type="checkbox"
+              checked={showRemotes}
+              onChange={(e) => {
+                const next = e.target.checked;
+                setShowRemotes(next);
+                try {
+                  localStorage.setItem(STORAGE_SHOW_REMOTES, String(next));
+                } catch {}
+              }}
+              style={{ cursor: "pointer" }}
+            />
+            <span>显示远端分支</span>
+          </label>
+        )}
 
         {/* Search Input */}
         <div style={{ position: "relative", flex: 1, maxWidth: 280 }}>
