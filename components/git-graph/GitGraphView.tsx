@@ -29,7 +29,7 @@ const OVERSCAN = 20;
 
 export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
   const isMobile = useIsMobile();
-  const pageSize = isMobile ? 150 : 500;
+  const pageSize = isMobile ? 200 : 500;
 
   const [commits, setCommits] = useState<GitGraphCommit[]>([]);
   const [branches, setBranches] = useState<string[]>([]);
@@ -46,15 +46,18 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const generationRef = useRef(0);
 
+  const [isDraggingGraph, setIsDraggingGraph] = useState(false);
+  const [isDraggingDesc, setIsDraggingDesc] = useState(false);
+
   const [graphWidth, setGraphWidth] = useState<number>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_GRAPH_WIDTH);
       if (saved) {
         const val = Number(saved);
-        if (Number.isFinite(val) && val >= 50 && val <= 600) return val;
+        if (Number.isFinite(val) && val >= 50 && val <= 1000) return val;
       }
     } catch {}
-    return 100;
+    return 110;
   });
 
   const [descWidth, setDescWidth] = useState<number | null>(() => {
@@ -150,6 +153,18 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
     return computeGraphRows(commits);
   }, [commits]);
 
+  // Compute maximum lane used across all computed rows to guarantee no overlap with description
+  const maxLanes = useMemo(() => {
+    let max = 1;
+    for (const r of allRows) {
+      if (r.maxLanes > max) max = r.maxLanes;
+    }
+    return max;
+  }, [allRows]);
+
+  const minGraphWidth = Math.max(80, maxLanes * GRAPH_LANE_WIDTH + 16);
+  const effectiveGraphWidth = isMobile ? Math.max(minGraphWidth, 80) : Math.max(graphWidth, minGraphWidth);
+
   // Filter rows based on search
   const filteredRows = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
@@ -225,22 +240,30 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
     }
   };
 
-  // Column resizing handlers
-  const handleGraphResize = (e: React.PointerEvent) => {
+  // Column resizing handlers with PointerCapture and boundary centering
+  const handleGraphResize = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
+    e.stopPropagation();
+    const target = e.currentTarget;
+    target.setPointerCapture(e.pointerId);
+    setIsDraggingGraph(true);
     const startX = e.clientX;
-    const startW = graphWidth;
+    const startW = effectiveGraphWidth;
 
     const onPointerMove = (moveEvent: PointerEvent) => {
       const delta = moveEvent.clientX - startX;
-      const nextW = Math.max(50, Math.min(600, Math.round(startW + delta)));
+      const nextW = Math.max(minGraphWidth, Math.min(1000, Math.round(startW + delta)));
       setGraphWidth(nextW);
       try {
         localStorage.setItem(STORAGE_GRAPH_WIDTH, String(nextW));
       } catch {}
     };
 
-    const onPointerUp = () => {
+    const onPointerUp = (upEvent: PointerEvent) => {
+      try {
+        target.releasePointerCapture(upEvent.pointerId);
+      } catch {}
+      setIsDraggingGraph(false);
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
     };
@@ -249,8 +272,12 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
     window.addEventListener("pointerup", onPointerUp);
   };
 
-  const handleDescResize = (e: React.PointerEvent) => {
+  const handleDescResize = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
+    e.stopPropagation();
+    const target = e.currentTarget;
+    target.setPointerCapture(e.pointerId);
+    setIsDraggingDesc(true);
     const startX = e.clientX;
     const startW = descWidth ?? 350;
 
@@ -263,7 +290,11 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
       } catch {}
     };
 
-    const onPointerUp = () => {
+    const onPointerUp = (upEvent: PointerEvent) => {
+      try {
+        target.releasePointerCapture(upEvent.pointerId);
+      } catch {}
+      setIsDraggingDesc(false);
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
     };
@@ -638,12 +669,14 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
         <div
           style={{
             position: "relative",
-            width: isMobile ? Math.min(graphWidth, 80) : graphWidth,
+            width: effectiveGraphWidth,
             padding: "0 8px",
             display: "flex",
             alignItems: "center",
             height: "100%",
             flexShrink: 0,
+            borderRight: "1px solid var(--border)",
+            userSelect: "none",
           }}
         >
           <span>图谱</span>
@@ -651,22 +684,44 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
             <div
               onPointerDown={handleGraphResize}
               onDoubleClick={() => {
-                setGraphWidth(100);
+                setGraphWidth(minGraphWidth);
                 try {
                   localStorage.removeItem(STORAGE_GRAPH_WIDTH);
                 } catch {}
               }}
-              title="拖拽调整宽度，双击重置"
+              onMouseEnter={(e) => {
+                const line = e.currentTarget.firstElementChild as HTMLElement;
+                if (line) line.style.background = "var(--accent)";
+              }}
+              onMouseLeave={(e) => {
+                if (!isDraggingGraph) {
+                  const line = e.currentTarget.firstElementChild as HTMLElement;
+                  if (line) line.style.background = "transparent";
+                }
+              }}
+              title="拖拽调整图谱宽度，双击自适应重置"
               style={{
                 position: "absolute",
-                right: 0,
+                right: -6,
                 top: 0,
                 bottom: 0,
-                width: 6,
+                width: 12,
                 cursor: "col-resize",
-                zIndex: 10,
+                zIndex: 20,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
               }}
-            />
+            >
+              <div
+                style={{
+                  width: 2,
+                  height: "100%",
+                  background: isDraggingGraph ? "var(--accent)" : "transparent",
+                  transition: "background 0.15s",
+                }}
+              />
+            </div>
           )}
         </div>
 
@@ -682,6 +737,8 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
             height: "100%",
             overflow: "hidden",
             whiteSpace: "nowrap",
+            borderRight: !isMobile ? "1px solid var(--border)" : undefined,
+            userSelect: "none",
           }}
         >
           <span>描述</span>
@@ -694,17 +751,39 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
                   localStorage.removeItem(STORAGE_DESC_WIDTH);
                 } catch {}
               }}
-              title="拖拽调整宽度，双击重置"
+              onMouseEnter={(e) => {
+                const line = e.currentTarget.firstElementChild as HTMLElement;
+                if (line) line.style.background = "var(--accent)";
+              }}
+              onMouseLeave={(e) => {
+                if (!isDraggingDesc) {
+                  const line = e.currentTarget.firstElementChild as HTMLElement;
+                  if (line) line.style.background = "transparent";
+                }
+              }}
+              title="拖拽调整描述宽度，双击重置"
               style={{
                 position: "absolute",
-                right: 0,
+                right: -6,
                 top: 0,
                 bottom: 0,
-                width: 6,
+                width: 12,
                 cursor: "col-resize",
-                zIndex: 10,
+                zIndex: 20,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
               }}
-            />
+            >
+              <div
+                style={{
+                  width: 2,
+                  height: "100%",
+                  background: isDraggingDesc ? "var(--accent)" : "transparent",
+                  transition: "background 0.15s",
+                }}
+              />
+            </div>
           )}
         </div>
 
@@ -728,10 +807,6 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
         {visibleRows.map((row) => {
           const c = row.commit;
           const isSelected = c.sha === selectedSha;
-          const svgWidth = Math.max(
-            row.maxLanes * GRAPH_LANE_WIDTH + 8,
-            graphWidth
-          );
 
           return (
             <div
@@ -757,18 +832,19 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
               {/* Graph Cell */}
               <div
                 style={{
-                  width: isMobile ? Math.min(graphWidth, 80) : graphWidth,
+                  width: effectiveGraphWidth,
                   height: GRAPH_ROW_HEIGHT,
                   flexShrink: 0,
                   display: "flex",
                   alignItems: "center",
-                  overflow: "visible",
+                  overflow: "hidden",
+                  borderRight: "1px solid var(--border)",
                 }}
               >
                 <GitGraphRowSvg
                   row={row}
                   isSelected={isSelected}
-                  width={svgWidth}
+                  width={effectiveGraphWidth}
                 />
               </div>
 
@@ -784,6 +860,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
                   padding: "0 8px",
                   overflow: "hidden",
                   whiteSpace: "nowrap",
+                  borderRight: !isMobile ? "1px solid var(--border)" : undefined,
                 }}
               >
                 {renderRefBadges(c.refs)}
