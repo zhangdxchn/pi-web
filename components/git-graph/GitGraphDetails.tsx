@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { GitCommitDetail, GitGraphCommit } from "@/lib/git-types";
 import { formatCommitDate } from "@/lib/git-graph-model";
 import { getFileIcon } from "../FileIcons";
+import { useI18n } from "@/hooks/useI18n";
 
 interface GitGraphDetailsProps {
   cwd: string;
@@ -24,6 +25,7 @@ export function GitGraphDetails({
   onSelectSha,
   onOpenFileDiff,
 }: GitGraphDetailsProps) {
+  const { t } = useI18n();
   const [detail, setDetail] = useState<GitCommitDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [copiedSha, setCopiedSha] = useState(false);
@@ -142,7 +144,7 @@ export function GitGraphDetails({
                 cursor: "pointer",
               }}
             >
-              {copiedSha ? "已复制 ✓" : commit.shortSha}
+              {copiedSha ? `${t("i18n.copied")} ✓` : commit.shortSha}
             </button>
           </div>
 
@@ -166,7 +168,7 @@ export function GitGraphDetails({
             {commit.parents.length > 0 ? (
               <>
                 <span>•</span>
-                <span>父提交:</span>
+                <span>{t("gitGraph.parents")}</span>
                 {commit.parents.map((p) => {
                   const short = p.slice(0, 7);
                   return (
@@ -174,7 +176,7 @@ export function GitGraphDetails({
                       key={p}
                       type="button"
                       onClick={() => onSelectSha?.(p)}
-                      title={`跳转至父提交 ${p}`}
+                      title={t("gitGraph.goToParent", { sha: p })}
                       style={{
                         fontFamily: "var(--font-mono)",
                         fontSize: 10.5,
@@ -195,7 +197,7 @@ export function GitGraphDetails({
             ) : (
               <>
                 <span>•</span>
-                <span>父提交: <span style={{ color: "var(--text-dim)", fontStyle: "italic" }}>(根提交 · 无父提交)</span></span>
+                <span>{t("gitGraph.parents")} <span style={{ color: "var(--text-dim)", fontStyle: "italic" }}>{t("gitGraph.rootCommit")}</span></span>
               </>
             )}
           </div>
@@ -204,8 +206,8 @@ export function GitGraphDetails({
         <button
           type="button"
           onClick={onClose}
-          title="关闭详情"
-          aria-label="关闭详情"
+          title={t("gitGraph.closeDetails")}
+          aria-label={t("gitGraph.closeDetails")}
           style={{
             background: "none",
             border: "none",
@@ -224,16 +226,16 @@ export function GitGraphDetails({
       <div style={{ flex: 1, overflowY: "auto", padding: "6px 12px" }}>
         {loading ? (
           <div style={{ padding: "12px 0", fontSize: 11, color: "var(--text-dim)" }}>
-            正在加载文件变更…
+            {t("gitGraph.loadingChanges")}
           </div>
         ) : !detail || detail.files.length === 0 ? (
           <div style={{ padding: "12px 0", fontSize: 11, color: "var(--text-dim)" }}>
-            该提交无文件变更
+            {t("gitGraph.noFileChanges")}
           </div>
         ) : (
           <div>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
-              {detail.files.length} 个变更文件:
+              {t("gitGraph.changedFiles", { count: detail.files.length })}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
               {detail.files.map((file) => {
@@ -295,7 +297,7 @@ export function GitGraphDetails({
                         )}
                       </div>
                       <span style={{ fontSize: 10, color: "var(--accent)" }}>
-                        查看 Diff ↗
+                        {t("gitGraph.viewDiff")} ↗
                       </span>
                     </div>
                   </div>

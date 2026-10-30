@@ -19,6 +19,7 @@ import {
 import { GitGraphRowSvg } from "./GitGraphRowSvg";
 import { GitGraphDetails } from "./GitGraphDetails";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useI18n } from "@/hooks/useI18n";
 
 interface GitGraphViewProps {
   cwd: string;
@@ -32,6 +33,7 @@ const STORAGE_SHOW_REMOTES = "pi-web:git-graph-show-remotes";
 const OVERSCAN = 20;
 
 export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
+  const { t } = useI18n();
   const isMobile = useIsMobile();
   const pageSize = isMobile ? 200 : 500;
 
@@ -137,9 +139,10 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
       setCommits(resData.commits);
       commitsRef.current = resData.commits;
 
-      if (resData.commits.length > 0) {
-        setSelectedSha((cur) => cur ?? resData.commits[0].sha);
-      }
+      setSelectedSha((cur) => {
+        if (!cur) return null;
+        return resData.commits.some((c) => c.sha === cur) ? cur : null;
+      });
     } catch (e) {
       if (generationRef.current !== gen) return;
       setError(e instanceof Error ? e.message : String(e));
@@ -277,8 +280,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
   }, [commits, selectedSha]);
 
   const handleSelectSha = (sha: string) => {
-    console.log('[HUNT DEBUG] handleSelectSha called with sha:', sha);
-    setSelectedSha(sha);
+    setSelectedSha((cur) => (cur === sha ? null : sha));
     const targetIdx = filteredRows.findIndex((r) => r.commit.sha === sha);
     if (targetIdx !== -1 && scrollContainerRef.current) {
       const targetTop = targetIdx * GRAPH_ROW_HEIGHT;
@@ -408,7 +410,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
           fontSize: 12,
         }}
       >
-        正在加载 Git 提交图谱…
+        {t("gitGraph.loading")}
       </div>
     );
   }
@@ -430,7 +432,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
         }}
       >
         <span style={{ color: "#ef4444" }}>
-          {error || "当前工作区不是一个有效的 Git 仓库"}
+          {error || t("gitGraph.notGitRepo")}
         </span>
         <button
           type="button"
@@ -445,7 +447,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
             fontSize: 11,
           }}
         >
-          重试
+          {t("gitGraph.retry")}
         </button>
       </div>
     );
@@ -510,7 +512,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
               <circle cx="18" cy="9" r="3" />
               <path d="M6 9v6M18 12a9 9 0 0 1-9 9" />
             </svg>
-            <span>{branchFilter === "all" ? "全部分支" : branchFilter === "current" ? "当前分支" : branchFilter}</span>
+            <span>{branchFilter === "all" ? t("gitGraph.allBranches") : branchFilter === "current" ? t("gitGraph.currentBranch") : branchFilter}</span>
             <svg
               width="10"
               height="10"
@@ -553,7 +555,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
                   background: branchFilter === "all" ? "var(--bg-selected)" : "transparent",
                 }}
               >
-                全部分支 (All Branches)
+                {t("gitGraph.allBranches")}
               </div>
               <div
                 onClick={() => {
@@ -570,7 +572,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
                   background: branchFilter === "current" ? "var(--bg-selected)" : "transparent",
                 }}
               >
-                当前分支 (Current Branch{currentBranch ? `: ${currentBranch}` : ""})
+                {currentBranch ? t("gitGraph.currentBranchNamed", { branch: currentBranch }) : t("gitGraph.currentBranch")}
               </div>
               {branches.map((b) => (
                 <div
@@ -609,7 +611,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
               userSelect: "none",
               whiteSpace: "nowrap",
             }}
-            title="包含或隐藏远端分支 (Show Remote Branches)"
+            title={t("gitGraph.showRemotes")}
           >
             <input
               type="checkbox"
@@ -623,7 +625,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
               }}
               style={{ cursor: "pointer" }}
             />
-            <span>显示远端分支</span>
+            <span>{t("gitGraph.showRemotes")}</span>
           </label>
         )}
 
@@ -652,7 +654,8 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="搜索提交 (信息, SHA, 作者)…"
+            placeholder={t("gitGraph.search")}
+            aria-label={t("gitGraph.search")}
             style={{
               width: "100%",
               height: 24,
@@ -670,6 +673,8 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
             <button
               type="button"
               onClick={() => setSearchQuery("")}
+              title={t("gitGraph.clearSearch")}
+              aria-label={t("gitGraph.clearSearch")}
               style={{
                 position: "absolute",
                 right: 4,
@@ -700,12 +705,13 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
               fontVariantNumeric: "tabular-nums",
             }}
           >
-            {filteredRows.length} 个提交{hasMore ? " (未完)" : ""}
+            {t(hasMore ? "gitGraph.commitCountMore" : "gitGraph.commitCount", { count: filteredRows.length })}
           </span>
           <button
             type="button"
             onClick={() => void loadInitial()}
-            title="刷新图谱"
+            title={t("gitGraph.refresh")}
+            aria-label={t("gitGraph.refresh")}
             style={{
               width: 24,
               height: 24,
@@ -760,7 +766,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
             userSelect: "none",
           }}
         >
-          <span>图谱</span>
+          <span>{t("gitGraph.graph")}</span>
           {!isMobile && (
             <div
               onPointerDown={handleGraphResize}
@@ -780,7 +786,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
                   if (line) line.style.background = "transparent";
                 }
               }}
-              title="拖拽调整图谱宽度，双击自适应重置"
+              title={t("gitGraph.resizeGraph")}
               style={{
                 position: "absolute",
                 right: -6,
@@ -822,7 +828,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
             userSelect: "none",
           }}
         >
-          <span>描述</span>
+          <span>{t("gitGraph.description")}</span>
           {!isMobile && (
             <div
               onPointerDown={handleDescResize}
@@ -842,7 +848,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
                   if (line) line.style.background = "transparent";
                 }
               }}
-              title="拖拽调整描述宽度，双击重置"
+              title={t("gitGraph.resizeDescription")}
               style={{
                 position: "absolute",
                 right: -6,
@@ -868,8 +874,8 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
           )}
         </div>
 
-        {!isMobile && <div style={{ width: 120, padding: "0 8px", flexShrink: 0 }}>作者</div>}
-        {!isMobile && <div style={{ width: 125, padding: "0 8px", flexShrink: 0 }}>日期</div>}
+        {!isMobile && <div style={{ width: 120, padding: "0 8px", flexShrink: 0 }}>{t("gitGraph.author")}</div>}
+        {!isMobile && <div style={{ width: 125, padding: "0 8px", flexShrink: 0 }}>{t("gitGraph.date")}</div>}
         {!isMobile && <div style={{ width: 70, padding: "0 8px", flexShrink: 0 }}>SHA</div>}
       </div>
 
@@ -1060,19 +1066,19 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ animation: "spin 0.8s linear infinite" }}>
                     <path d="M21 12a9 9 0 1 1-6.219-8.56" />
                   </svg>
-                  <span>正在加载更多提交…</span>
+                  <span>{t("gitGraph.loadingMore")}</span>
                 </>
               ) : (
                 <>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <polyline points="6 9 12 15 18 9" />
                   </svg>
-                  <span>加载更早提交 (+{pageSize})</span>
+                  <span>{t("gitGraph.loadMore", { count: pageSize })}</span>
                 </>
               )}
             </button>
             <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
-              已加载 {commits.length} 个
+              {t("gitGraph.loadedCount", { count: commits.length })}
             </span>
           </div>
         )}
@@ -1088,7 +1094,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
               background: "var(--bg-panel)",
             }}
           >
-            已加载全部 {commits.length} 个提交 · 达到最初提交
+            {t("gitGraph.allCommitsLoaded", { count: commits.length })}
           </div>
         )}
       </div>
@@ -1105,10 +1111,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
               localStorage.setItem(STORAGE_DETAILS_HEIGHT, String(h));
             } catch {}
           }}
-          onClose={() => {
-            console.log('[HUNT DEBUG] onClose called!');
-            setSelectedSha(null);
-          }}
+          onClose={() => setSelectedSha(null)}
           onSelectSha={handleSelectSha}
           onOpenFileDiff={onOpenFileDiff}
         />

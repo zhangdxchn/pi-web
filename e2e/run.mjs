@@ -19,6 +19,7 @@ import { checkModelSelector } from "./model-selector.mjs";
 import { checkFilesPlacement, showSidebarSessions } from "./sidebar.mjs";
 import { checkSessionNavigation } from "./session-navigation.mjs";
 import { checkProjectNavigation, createProjectNavigationFixtures } from "./project-navigation.mjs";
+import { checkGitGraphI18n } from "./git-graph-i18n.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const mode = process.env.E2E_SERVER_MODE || "dev";
@@ -535,6 +536,7 @@ try {
       assert.ok(response.ok, `DELETE session ${id} -> ${response.status}`);
     },
   });
+  await checkGitGraphI18n({ browser, base, artifacts, fixture: projectNavigation });
   await checkProjectNavigation({ browser, base, artifacts, fixture: projectNavigation, otherSessionId: BRANCH, api, post });
 } catch (error) {
   console.error(error);
