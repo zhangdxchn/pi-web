@@ -270,6 +270,7 @@ export const zhTWLocale: LocalePlugin = {
     "session.projectDir": "專案目錄",
     "session.gitBranch": "Git 分支",
     "session.gitWorktree": "Worktree",
+    "gitGraph.title": "Git Graph 圖譜",
     "session.copyProjectDir": "複製專案目錄",
     "session.copyGitBranch": "複製 Git 分支",
     "session.copyGitWorktree": "複製 Worktree 路徑",

@@ -270,6 +270,7 @@ export const enLocale: LocalePlugin = {
     "session.projectDir": "Project Dir",
     "session.gitBranch": "Git Branch",
     "session.gitWorktree": "Worktree",
+    "gitGraph.title": "Git Graph",
     "session.copyProjectDir": "Copy project directory",
     "session.copyGitBranch": "Copy git branch",
     "session.copyGitWorktree": "Copy worktree path",

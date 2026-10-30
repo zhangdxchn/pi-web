@@ -106,6 +106,7 @@ import {
   MessageIcon,
   MoreIcon,
   ForkIcon,
+  GitGraphIcon,
   OpenInNewTabIcon,
   PencilIcon,
   PinIcon,
@@ -224,6 +225,7 @@ interface Props {
   ) => void;
   onOpenFile?: (filePath: string, fileName: string, options?: { sourceSessionId?: string | null; modeHint?: "diff" }) => void;
   onOpenTerminal?: (cwd: string) => void;
+  onOpenGitGraph?: (cwd: string) => void;
   explorerRefreshKey?: number;
   onExplorerRefresh?: () => void;
   onAtMention?: (relativePath: string, isDir: boolean) => void;
@@ -503,7 +505,7 @@ function buttonAnchor(element: HTMLElement, align: "start" | "end"): SidebarMenu
   return { kind: "rect", rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }, align };
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, controlRef, onNewSessionContextChange, initialSessionId, initialSessionLinked, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange }: Props) {
+export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, controlRef, onNewSessionContextChange, initialSessionId, initialSessionLinked, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, onOpenGitGraph, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
@@ -2724,6 +2726,15 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       <TerminalIcon size={keyIconSize} />
     </ToolbarIconButton>
   );
+  const gitGraphButton = (
+    <ToolbarIconButton
+      onClick={() => { if (explorerCwd) onOpenGitGraph?.(explorerCwd); }}
+      disabled={!explorerCwd || !onOpenGitGraph || worktreeState?.isGit === false}
+      title={t("gitGraph.title")}
+    >
+      <GitGraphIcon size={keyIconSize} />
+    </ToolbarIconButton>
+  );
   const fileManagerButton = (
     <ToolbarIconButton
       onClick={() => {
@@ -3067,6 +3078,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             </button>
             <div className="sidebar-files-keys" role="group" aria-label={t("sidebar.fileActions")}>
               {terminalButton}
+              {gitGraphButton}
               {fileManagerButton}
               {uploadButton}
               {refreshButton}
@@ -3138,6 +3150,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             {!stacked && explorerCwd && (
               <div className="sidebar-files-actions" role="group" aria-label={t("sidebar.fileActions")}>
                 {onOpenTerminal && terminalButton}
+                {onOpenGitGraph && gitGraphButton}
                 {fileManagerButton}
                 {uploadButton}
                 {refreshButton}

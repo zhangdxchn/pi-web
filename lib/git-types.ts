@@ -27,3 +27,50 @@ export interface GitFileDiffResponse {
   status?: GitFileStatusKind;
   patch?: string;
 }
+
+export type GitGraphRefType = "head" | "branch" | "tag" | "remote";
+
+export interface GitGraphRef {
+  type: GitGraphRefType;
+  name: string;
+  current?: boolean;
+}
+
+export interface GitGraphCommit {
+  sha: string;
+  shortSha: string;
+  parents: string[];
+  author: string;
+  authorEmail: string;
+  committedAt: string;
+  subject: string;
+  refs: GitGraphRef[];
+}
+
+export interface GitGraphData {
+  isGitRepository: boolean;
+  commits: GitGraphCommit[];
+  branches: string[];
+  currentBranch: string;
+  hasMore: boolean;
+}
+
+export interface GitCommitFileChange {
+  filePath: string;
+  status: GitFileStatusKind;
+  additions: number;
+  deletions: number;
+}
+
+export interface GitCommitDetail {
+  sha: string;
+  shortSha: string;
+  subject: string;
+  body: string;
+  author: string;
+  authorEmail: string;
+  committedAt: string;
+  parents: string[];
+  files: GitCommitFileChange[];
+}
+

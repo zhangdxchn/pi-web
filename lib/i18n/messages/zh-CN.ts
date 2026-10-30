@@ -270,6 +270,7 @@ export const zhCNLocale: LocalePlugin = {
     "session.projectDir": "项目目录",
     "session.gitBranch": "Git 分支",
     "session.gitWorktree": "Worktree",
+    "gitGraph.title": "Git Graph 图谱",
     "session.copyProjectDir": "复制项目目录",
     "session.copyGitBranch": "复制 Git 分支",
     "session.copyGitWorktree": "复制 Worktree 路径",
