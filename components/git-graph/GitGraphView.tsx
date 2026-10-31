@@ -18,6 +18,8 @@ import {
 } from "@/lib/git-graph-model";
 import { GitGraphRowSvg } from "./GitGraphRowSvg";
 import { GitGraphDetails } from "./GitGraphDetails";
+import { useGitGraphColumns } from "./useGitGraphColumns";
+import styles from "./GitGraphView.module.css";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/hooks/useI18n";
 
@@ -26,8 +28,6 @@ interface GitGraphViewProps {
   onOpenFileDiff?: (filePath: string, sha: string) => void;
 }
 
-const STORAGE_GRAPH_WIDTH = "pi-web:git-graph-col-graph-width";
-const STORAGE_DESC_WIDTH = "pi-web:git-graph-col-desc-width";
 const STORAGE_DETAILS_HEIGHT = "pi-web:git-graph-details-height";
 const STORAGE_SHOW_REMOTES = "pi-web:git-graph-show-remotes";
 const OVERSCAN = 20;
@@ -65,31 +65,6 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
   const hasMoreRef = useRef(hasMore);
   hasMoreRef.current = hasMore;
 
-  const [isDraggingGraph, setIsDraggingGraph] = useState(false);
-  const [isDraggingDesc, setIsDraggingDesc] = useState(false);
-
-  const [graphWidth, setGraphWidth] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_GRAPH_WIDTH);
-      if (saved) {
-        const val = Number(saved);
-        if (Number.isFinite(val) && val >= 50 && val <= 1000) return val;
-      }
-    } catch {}
-    return 110;
-  });
-
-  const [descWidth, setDescWidth] = useState<number | null>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_DESC_WIDTH);
-      if (saved) {
-        const val = Number(saved);
-        if (Number.isFinite(val) && val >= 160 && val <= 2000) return val;
-      }
-    } catch {}
-    return null;
-  });
-
   const [detailsHeight, setDetailsHeight] = useState<number>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_DETAILS_HEIGHT);
@@ -102,8 +77,10 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
   });
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const headerScrollRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [clientHeight, setClientHeight] = useState(600);
+  const [clientWidth, setClientWidth] = useState(0);
 
   // 1. Initial Load (runs when cwd, branchFilter, showRemotes or pageSize changes)
   const loadInitial = useCallback(async () => {
@@ -220,7 +197,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
   }, [allRows]);
 
   const minGraphWidth = Math.max(80, maxLanes * GRAPH_LANE_WIDTH + 16);
-  const effectiveGraphWidth = isMobile ? Math.max(minGraphWidth, 80) : Math.max(graphWidth, minGraphWidth);
+  const { columns, effectiveGraphWidth, headerRef, separatorProps, tableMinWidth } = useGitGraphColumns(minGraphWidth, isMobile, clientWidth);
 
   // Filter rows based on search
   const filteredRows = useMemo(() => {
@@ -239,6 +216,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
     setScrollTop(el.scrollTop);
+    if (headerScrollRef.current) headerScrollRef.current.scrollLeft = el.scrollLeft;
     // Automatically load more when scrolling within 300px of the bottom
     if (hasMoreRef.current && !inFlightRef.current) {
       const distanceToBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
@@ -248,19 +226,16 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
     }
   };
 
-  // ResizeObserver for measuring viewport height
+  // Header and rows use the scrollport's width, including its scrollbar inset.
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
-
-    setClientHeight(el.clientHeight);
-
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setClientHeight(entry.contentRect.height);
-      }
-    });
-
+    const measure = () => {
+      setClientHeight(el.clientHeight);
+      setClientWidth(el.clientWidth);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
   }, [loading, commits.length]);
@@ -293,69 +268,6 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
         });
       }
     }
-  };
-
-  // Column resizing handlers with PointerCapture and boundary centering
-  const handleGraphResize = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const target = e.currentTarget;
-    target.setPointerCapture(e.pointerId);
-    setIsDraggingGraph(true);
-    const startX = e.clientX;
-    const startW = effectiveGraphWidth;
-
-    const onPointerMove = (moveEvent: PointerEvent) => {
-      const delta = moveEvent.clientX - startX;
-      const nextW = Math.max(minGraphWidth, Math.min(1000, Math.round(startW + delta)));
-      setGraphWidth(nextW);
-      try {
-        localStorage.setItem(STORAGE_GRAPH_WIDTH, String(nextW));
-      } catch {}
-    };
-
-    const onPointerUp = (upEvent: PointerEvent) => {
-      try {
-        target.releasePointerCapture(upEvent.pointerId);
-      } catch {}
-      setIsDraggingGraph(false);
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-    };
-
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-  };
-
-  const handleDescResize = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const target = e.currentTarget;
-    target.setPointerCapture(e.pointerId);
-    setIsDraggingDesc(true);
-    const startX = e.clientX;
-    const startW = descWidth ?? 350;
-
-    const onPointerMove = (moveEvent: PointerEvent) => {
-      const delta = moveEvent.clientX - startX;
-      const nextW = Math.max(160, Math.min(2000, Math.round(startW + delta)));
-      setDescWidth(nextW);
-      try {
-        localStorage.setItem(STORAGE_DESC_WIDTH, String(nextW));
-      } catch {}
-    };
-
-    const onPointerUp = (upEvent: PointerEvent) => {
-      try {
-        target.releasePointerCapture(upEvent.pointerId);
-      } catch {}
-      setIsDraggingDesc(false);
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-    };
-
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
   };
 
   const renderRefBadges = (refs: GitGraphRef[], curveColor: string) => {
@@ -739,155 +651,52 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
         </div>
       </div>
 
-      {/* 2. Column Headers */}
-      <div
-        style={{
-          height: 26,
-          display: "flex",
-          alignItems: "center",
-          background: "var(--bg-panel)",
-          borderBottom: "1px solid var(--border)",
-          fontSize: 11,
-          color: "var(--text-dim)",
-          fontWeight: 500,
-          flexShrink: 0,
-        }}
-      >
-        <div
-          style={{
-            position: "relative",
-            width: effectiveGraphWidth,
-            padding: "0 8px",
-            display: "flex",
-            alignItems: "center",
-            height: "100%",
-            flexShrink: 0,
-            borderRight: "1px solid var(--border)",
-            userSelect: "none",
-          }}
-        >
-          <span>{t("gitGraph.graph")}</span>
-          {!isMobile && (
-            <div
-              onPointerDown={handleGraphResize}
-              onDoubleClick={() => {
-                setGraphWidth(minGraphWidth);
-                try {
-                  localStorage.removeItem(STORAGE_GRAPH_WIDTH);
-                } catch {}
-              }}
-              onMouseEnter={(e) => {
-                const line = e.currentTarget.firstElementChild as HTMLElement;
-                if (line) line.style.background = "var(--accent)";
-              }}
-              onMouseLeave={(e) => {
-                if (!isDraggingGraph) {
-                  const line = e.currentTarget.firstElementChild as HTMLElement;
-                  if (line) line.style.background = "transparent";
-                }
-              }}
-              title={t("gitGraph.resizeGraph")}
-              style={{
-                position: "absolute",
-                right: -6,
-                top: 0,
-                bottom: 0,
-                width: 12,
-                cursor: "col-resize",
-                zIndex: 20,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <div
-                style={{
-                  width: 2,
-                  height: "100%",
-                  background: isDraggingGraph ? "var(--accent)" : "transparent",
-                  transition: "background 0.15s",
-                }}
-              />
+      {/* The header follows the body's horizontal scroll, not its vertical scroll. */}
+      <div style={{ background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+        <div ref={headerScrollRef} className={styles.scrollEdge} style={{ width: clientWidth || "100%", overflow: "hidden" }}>
+          <div
+            ref={headerRef}
+            data-testid="git-graph-header"
+            style={{
+              height: 25, display: "flex", alignItems: "center", width: "100%",
+              minWidth: isMobile ? undefined : tableMinWidth,
+              fontSize: 11, color: "var(--text-dim)", fontWeight: 500,
+            }}
+          >
+            <div style={{ position: "relative", width: effectiveGraphWidth, padding: "0 8px", height: "100%", display: "flex", alignItems: "center", flexShrink: 0, borderRight: "1px solid var(--border)", userSelect: "none" }}>
+              <span>{t("gitGraph.graph")}</span>
+              {!isMobile && <div className={styles.columnResize} {...separatorProps("graph", t("gitGraph.resizeGraph"))} />}
             </div>
-          )}
-        </div>
-
-        <div
-          style={{
-            position: "relative",
-            flex: isMobile || !descWidth ? 1 : undefined,
-            width: isMobile ? undefined : (descWidth ?? undefined),
-            minWidth: 120,
-            padding: "0 8px",
-            display: "flex",
-            alignItems: "center",
-            height: "100%",
-            overflow: "hidden",
-            whiteSpace: "nowrap",
-            borderRight: !isMobile ? "1px solid var(--border)" : undefined,
-            userSelect: "none",
-          }}
-        >
-          <span>{t("gitGraph.description")}</span>
-          {!isMobile && (
-            <div
-              onPointerDown={handleDescResize}
-              onDoubleClick={() => {
-                setDescWidth(null);
-                try {
-                  localStorage.removeItem(STORAGE_DESC_WIDTH);
-                } catch {}
-              }}
-              onMouseEnter={(e) => {
-                const line = e.currentTarget.firstElementChild as HTMLElement;
-                if (line) line.style.background = "var(--accent)";
-              }}
-              onMouseLeave={(e) => {
-                if (!isDraggingDesc) {
-                  const line = e.currentTarget.firstElementChild as HTMLElement;
-                  if (line) line.style.background = "transparent";
-                }
-              }}
-              title={t("gitGraph.resizeDescription")}
-              style={{
-                position: "absolute",
-                right: -6,
-                top: 0,
-                bottom: 0,
-                width: 12,
-                cursor: "col-resize",
-                zIndex: 20,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <div
-                style={{
-                  width: 2,
-                  height: "100%",
-                  background: isDraggingDesc ? "var(--accent)" : "transparent",
-                  transition: "background 0.15s",
-                }}
-              />
+            <div style={{ position: "relative", flex: isMobile ? 1 : `1 0 ${columns.description}px`, minWidth: isMobile ? 120 : columns.description, padding: "0 8px", height: "100%", display: "flex", alignItems: "center", borderRight: !isMobile ? "1px solid var(--border)" : undefined, userSelect: "none" }}>
+              <span style={{ overflow: "hidden", whiteSpace: "nowrap" }}>{t("gitGraph.description")}</span>
+              {!isMobile && <div className={styles.columnResize} {...separatorProps("description", t("gitGraph.resizeDescription"))} />}
             </div>
-          )}
+            {!isMobile && <div style={{ position: "relative", width: columns.author, padding: "0 8px", height: "100%", display: "flex", alignItems: "center", flexShrink: 0, borderRight: "1px solid var(--border)", userSelect: "none" }}>
+              <span style={{ overflow: "hidden", whiteSpace: "nowrap" }}>{t("gitGraph.author")}</span>
+              <div className={styles.columnResize} {...separatorProps("author", t("gitGraph.resizeAuthor"))} />
+            </div>}
+            {!isMobile && <div style={{ position: "relative", width: columns.date, padding: "0 8px", height: "100%", display: "flex", alignItems: "center", flexShrink: 0, borderRight: "1px solid var(--border)", userSelect: "none" }}>
+              <span style={{ overflow: "hidden", whiteSpace: "nowrap" }}>{t("gitGraph.date")}</span>
+              <div className={styles.columnResize} {...separatorProps("date", t("gitGraph.resizeDate"))} />
+            </div>}
+            {!isMobile && <div style={{ width: columns.sha, padding: "0 8px", flexShrink: 0 }}>SHA</div>}
+          </div>
         </div>
-
-        {!isMobile && <div style={{ width: 120, padding: "0 8px", flexShrink: 0 }}>{t("gitGraph.author")}</div>}
-        {!isMobile && <div style={{ width: 125, padding: "0 8px", flexShrink: 0 }}>{t("gitGraph.date")}</div>}
-        {!isMobile && <div style={{ width: 70, padding: "0 8px", flexShrink: 0 }}>SHA</div>}
       </div>
 
       {/* 3. Virtual Scroll Body */}
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
+        className={styles.scrollEdge}
+        role="region"
+        aria-label={t("gitGraph.title")}
+        tabIndex={isMobile ? undefined : 0}
         data-testid="git-graph-body"
         style={{
           flex: 1,
           overflowY: "auto",
-          overflowX: "hidden",
+          overflowX: isMobile ? "hidden" : "auto",
           minHeight: 0,
           position: "relative",
         }}
@@ -901,10 +710,12 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
           return (
             <div
               key={c.sha}
+              data-testid="git-graph-row"
               onClick={() => handleSelectSha(c.sha)}
               style={{
                 display: "flex",
                 alignItems: "center",
+                minWidth: isMobile ? undefined : tableMinWidth,
                 height: GRAPH_ROW_HEIGHT,
                 boxSizing: "border-box",
                 borderBottom: "1px solid var(--border)",
@@ -941,9 +752,8 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
               {/* Description Cell */}
               <div
                 style={{
-                  flex: isMobile || !descWidth ? 1 : undefined,
-                  width: isMobile ? undefined : (descWidth ?? undefined),
-                  minWidth: 120,
+                  flex: isMobile ? 1 : `1 0 ${columns.description}px`,
+                  minWidth: isMobile ? 120 : columns.description,
                   display: "flex",
                   alignItems: "center",
                   gap: 6,
@@ -973,7 +783,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
                 <div
                   title={`${c.author} (${c.authorEmail})`}
                   style={{
-                    width: 120,
+                    width: columns.author,
                     flexShrink: 0,
                     padding: "0 8px",
                     color: "var(--text-muted)",
@@ -992,7 +802,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
                 <div
                   title={c.committedAt}
                   style={{
-                    width: 125,
+                    width: columns.date,
                     flexShrink: 0,
                     padding: "0 8px",
                     color: "var(--text-dim)",
@@ -1011,7 +821,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
               {!isMobile && (
                 <div
                   style={{
-                    width: 70,
+                    width: columns.sha,
                     flexShrink: 0,
                     padding: "0 8px",
                     fontFamily: "var(--font-mono)",

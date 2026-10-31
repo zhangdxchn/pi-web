@@ -1,0 +1,59 @@
+@keyframes scroll-fade-start {
+  from { --scroll-fade-start: 0px; }
+  to { --scroll-fade-start: var(--scroll-fade-size); }
+}
+
+@keyframes scroll-fade-end {
+  from { --scroll-fade-end: var(--scroll-fade-size); }
+  to { --scroll-fade-end: 0px; }
+}
+
+@supports (animation-timeline: scroll()) {
+  .scrollEdge {
+    --scroll-fade-size: 28px;
+    animation-name: scroll-fade-start, scroll-fade-end;
+    animation-duration: auto;
+    animation-timing-function: linear;
+    animation-fill-mode: both;
+    animation-range: 0px var(--scroll-fade-size), calc(100% - var(--scroll-fade-size)) 100%;
+    animation-timeline: scroll(self inline);
+    mask-repeat: no-repeat;
+    mask-image: linear-gradient(to right, transparent, #000 var(--scroll-fade-start), #000 calc(100% - var(--scroll-fade-end)), transparent);
+  }
+}
+
+.columnResize {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: -6px;
+  bottom: 0;
+  width: 12px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+
+.columnResize::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 5px;
+  width: 2px;
+  background: transparent;
+  content: "";
+}
+
+.columnResize:hover::after,
+.columnResize:focus-visible::after,
+.columnResize[data-resizing]::after {
+  background: var(--accent);
+}
+
+.columnResize[data-limited] {
+  cursor: not-allowed;
+}
+
+.columnResize[data-limited]::after {
+  background: var(--text-dim);
+}

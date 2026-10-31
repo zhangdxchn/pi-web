@@ -58,6 +58,8 @@ Coverage:
   live without reloading its data or losing its search; loading, pagination,
   commit details, errors and the saved language on mobile are checked with a
   scripted API.
+  Column tests cover resizing by mouse, keyboard and touch, saved widths,
+  narrow-panel horizontal scrolling, and header and virtual-row alignment.
 - The model picker, with a synthetic catalog: on a phone, a simulated keyboard
   (visual viewport shrink, pan, a late height with no event) keeps the same
   filter focused and the list in the visible viewport. Native phone keyboards
