@@ -11,6 +11,7 @@ import { useI18n } from "@/hooks/useI18n";
 import { usePrismLanguages } from "@/hooks/usePrismLanguages";
 import { copyText } from "@/lib/clipboard";
 import { takeHighlightBudget, waitForHighlight } from "@/lib/highlight-queue";
+import { repairMermaidSyntax } from "@/lib/mermaid-syntax-repair";
 import { prismLanguagesLoaded } from "@/lib/prism-languages";
 
 interface MermaidBlockProps {
@@ -37,10 +38,21 @@ export function downloadMermaidSvg(svg: SVGSVGElement): void {
   downloadSvgFile(new XMLSerializer().serializeToString(svg), "mermaid-diagram.svg");
 }
 
+type RenderStage = "load" | "parse" | "render";
 type RenderState =
   | { key: string; status: "loading" }
-  | { key: string; status: "error" }
-  | { key: string; status: "ready"; svg: string };
+  | { key: string; status: "error"; stage: RenderStage; line?: number; unknownType?: boolean; detail?: string }
+  | { key: string; status: "ready"; svg: string; repairedCode?: string };
+
+function mermaidParserLine(error: unknown): number | undefined {
+  if (!error || typeof error !== "object" || !("hash" in error)) return;
+  const hash = error.hash;
+  if (!hash || typeof hash !== "object" || !("loc" in hash)) return;
+  const loc = hash.loc;
+  if (!loc || typeof loc !== "object" || !("first_line" in loc)) return;
+  const line = loc.first_line;
+  return typeof line === "number" && Number.isInteger(line) && line > 0 ? line : undefined;
+}
 
 export function MermaidBlock({ code, isStreaming, defaultPreview = false }: MermaidBlockProps) {
   const { isDark } = useTheme();
@@ -48,6 +60,7 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = false }: Merm
   const [showPreview, setShowPreview] = useState(defaultPreview);
   const [renderState, setRenderState] = useState<RenderState | null>(null);
   const [zoomOpen, setZoomOpen] = useState(false);
+  const [repairCopied, setRepairCopied] = useState(false);
   const previewRef = useRef<HTMLButtonElement>(null);
   const currentKey = `${isDark ? "dark" : "light"}\n${code}`;
   const previewVisible = showPreview && !isStreaming;
@@ -56,6 +69,7 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = false }: Merm
     if (!previewVisible) return;
 
     let cancelled = false;
+    let stage: RenderStage = "load";
     setRenderState({ key: currentKey, status: "loading" });
 
     const render = async () => {
@@ -67,21 +81,63 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = false }: Merm
         theme: isDark ? "dark" : "default",
       });
 
-      const parsed = await mermaid.parse(code, { suppressErrors: true });
-      if (!parsed) throw new Error("Invalid Mermaid diagram");
+      // Diagram types load lazily here, so not every parse failure is syntax.
+      stage = "parse";
+      let repairedCode: string | undefined;
+      let originalError: unknown;
+      try {
+        await mermaid.parse(code);
+      } catch (error) {
+        if (!mermaidParserLine(error)) throw error;
+        originalError = error;
+        try {
+          const diagramType = mermaid.detectType(code);
+          if (diagramType !== "flowchart" && diagramType !== "flowchart-v2") throw error;
+          const candidate = repairMermaidSyntax(code);
+          if (!candidate) throw error;
+          await mermaid.parse(candidate);
+          repairedCode = candidate;
+        } catch {
+          throw error;
+        }
+      }
 
+      stage = "render";
       const id =
         typeof crypto !== "undefined" && "randomUUID" in crypto
           ? `mermaid-${crypto.randomUUID()}`
           : `mermaid-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const result = await mermaid.render(id, code);
+      // Mermaid can leave its temporary SVG behind if rendering fails before
+      // its own cleanup. Give it a hidden container that we always remove.
+      const container = document.createElement("div");
+      Object.assign(container.style, { position: "fixed", top: "0", left: "0", width: "100%", visibility: "hidden", pointerEvents: "none" });
+      document.body.appendChild(container);
+      let result;
+      try {
+        result = await mermaid.render(id, repairedCode ?? code, container);
+      } catch (error) {
+        if (repairedCode) {
+          stage = "parse";
+          throw originalError;
+        }
+        throw error;
+      } finally {
+        container.remove();
+      }
       if (!cancelled) {
-        setRenderState({ key: currentKey, status: "ready", svg: result.svg });
+        setRenderState({ key: currentKey, status: "ready", svg: result.svg, repairedCode });
       }
     };
 
-    render().catch(() => {
-      if (!cancelled) setRenderState({ key: currentKey, status: "error" });
+    render().catch((error: unknown) => {
+      if (!cancelled) setRenderState({
+        key: currentKey,
+        status: "error",
+        stage,
+        line: stage === "parse" ? mermaidParserLine(error) : undefined,
+        unknownType: stage === "parse" && error instanceof Error && error.name === "UnknownDiagramError",
+        detail: error instanceof Error ? error.message : typeof error === "string" ? error : undefined,
+      });
     });
 
     return () => {
@@ -103,7 +159,22 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = false }: Merm
   }
 
   const body = renderState?.key === currentKey && renderState.status === "error" ? (
-      <div className="mermaid-block mermaid-block-error">{t("i18n.invalidMermaid")}</div>
+      <div className="mermaid-block mermaid-block-error">
+        {renderState.stage === "load" && <div>{t("i18n.mermaidLoadError")}</div>}
+        {renderState.stage === "render" && <div>{t("i18n.mermaidRenderError")}</div>}
+        {renderState.stage === "parse" && (
+          <>
+            <div>{t(renderState.line ? "i18n.mermaidSyntaxError" : renderState.unknownType ? "i18n.mermaidUnknownType" : "i18n.mermaidParseError")}</div>
+            {renderState.line && <div>{t("i18n.mermaidParserLine", { line: renderState.line })}</div>}
+          </>
+        )}
+        {renderState.detail && (
+          <details>
+            <summary>{t("i18n.showDetails")}</summary>
+            <pre>{renderState.detail}</pre>
+          </details>
+        )}
+      </div>
     ) : renderState?.key !== currentKey || renderState.status !== "ready" ? (
       <div className="mermaid-block mermaid-block-loading" aria-label={t("i18n.renderingMermaid")} />
     ) : (
@@ -132,6 +203,20 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = false }: Merm
       lang="mermaid"
       actions={
         <>
+          {renderState?.key === currentKey && renderState.status === "ready" && renderState.repairedCode && (
+            <button
+              type="button"
+              className="markdown-code-action"
+              onClick={() => {
+                copyText(renderState.repairedCode!).then(() => {
+                  setRepairCopied(true);
+                  setTimeout(() => setRepairCopied(false), 1500);
+                });
+              }}
+            >
+              {repairCopied ? t("i18n.copied") : t("i18n.copyCorrectedMermaid")}
+            </button>
+          )}
           {renderState?.key === currentKey && renderState.status === "ready" && (
             <SvgDownloadButton
               onClick={() => {
