@@ -12,12 +12,14 @@ import {
 interface GitGraphRowSvgProps {
   row: GraphRowData;
   isSelected?: boolean;
+  isWorkingTree?: boolean;
   width?: number;
 }
 
 export const GitGraphRowSvg = memo(function GitGraphRowSvg({
   row,
   isSelected = false,
+  isWorkingTree = false,
   width,
 }: GitGraphRowSvgProps) {
   const offsetX = GRAPH_LANE_WIDTH / 2;
@@ -96,7 +98,16 @@ export const GitGraphRowSvg = memo(function GitGraphRowSvg({
       )}
 
       {/* 6. Commit node dot */}
-      {row.isMerge ? (
+      {isWorkingTree ? (
+        <circle
+          cx={x(row.lane)}
+          cy={yCenter}
+          r={GRAPH_NODE_RADIUS}
+          fill="var(--bg)"
+          stroke="var(--text-dim)"
+          strokeWidth={2}
+        />
+      ) : row.isMerge ? (
         <>
           <circle
             cx={x(row.lane)}

@@ -15,6 +15,29 @@ export const GRAPH_LANE_WIDTH = 16;
 export const GRAPH_ROW_HEIGHT = 28;
 export const GRAPH_NODE_RADIUS = 4;
 export const GRAPH_MERGE_RADIUS = 5;
+/** A display-only row, never sent to the commit or Git-action APIs. */
+export const WORKING_TREE_NODE_ID = "__git_working_tree__";
+
+/** Match Git Graph: show the working tree only while its HEAD is in the loaded graph. */
+export function withWorkingTreeNode(
+  commits: readonly GitGraphCommit[],
+  headSha: string,
+  changeCount: number,
+  subject: string,
+  timestamp: string,
+): readonly GitGraphCommit[] {
+  if (changeCount <= 0 || !headSha || !commits.some((commit) => commit.sha === headSha)) return commits;
+  return [{
+    sha: WORKING_TREE_NODE_ID,
+    shortSha: "*",
+    parents: [headSha],
+    author: "*",
+    authorEmail: "",
+    committedAt: timestamp,
+    subject,
+    refs: [],
+  }, ...commits];
+}
 
 export interface RefBadgeStyle {
   bg: string;
