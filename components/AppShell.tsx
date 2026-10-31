@@ -2882,7 +2882,8 @@ export function AppShell() {
         <div style={{ flex: 1, minHeight: 0, overflow: "hidden", paddingBottom: "env(safe-area-inset-bottom)" }}>
           {gitGraphOpen && activeCwd && (
             <div hidden={activeFileTabId !== "git-graph"} style={{ height: "100%" }}>
-              <GitGraphView cwd={activeCwd} onOpenFileDiff={handleOpenCommitDiff} />
+              <GitGraphView cwd={activeCwd} onOpenFileDiff={handleOpenCommitDiff} onOpenTerminal={handleOpenTerminal}
+                onGitChanged={() => { handleExplorerRefresh(); sidebarControlRef.current?.refreshWorktrees(); }} />
             </div>
           )}
           {activeFileTab?.commitDiff ? (

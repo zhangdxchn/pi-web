@@ -150,6 +150,41 @@ export async function listLocalGitBranches(repoRoot: string): Promise<string[]> 
   }
 }
 
+/** Read full ref names instead of guessing their type from log's abbreviated decorations. */
+export async function listGitGraphRefs(
+  repoRoot: string,
+  remotes: readonly string[],
+  currentBranch: string,
+): Promise<Map<string, GitGraphRef[]>> {
+  const output = await git(repoRoot, [
+    "for-each-ref",
+    "--format=%(refname)%00%(objectname)%00%(objecttype)%00%(*objectname)%00%(*objecttype)%00%(symref)",
+    "refs/heads/", "refs/remotes/", "refs/tags/",
+  ]);
+  const byCommit = new Map<string, GitGraphRef[]>();
+  for (const line of output.split("\n")) {
+    if (!line) continue;
+    const [fullName, object, type, peeled, peeledType, symref] = line.split("\0");
+    const sha = type === "commit" ? object : type === "tag" && peeledType === "commit" ? peeled : "";
+    if (!sha || !fullName) continue;
+    let ref: GitGraphRef;
+    if (fullName.startsWith("refs/heads/")) {
+      const name = fullName.slice("refs/heads/".length);
+      ref = { type: "branch", name, fullName, current: name === currentBranch };
+    } else if (fullName.startsWith("refs/tags/")) {
+      ref = { type: "tag", name: fullName.slice("refs/tags/".length), fullName, annotated: type === "tag" };
+    } else if (fullName.startsWith("refs/remotes/")) {
+      const name = fullName.slice("refs/remotes/".length);
+      const matches = remotes.filter((remote) => name.startsWith(`${remote}/`));
+      ref = { type: "remote", name, fullName, ...(matches.length === 1 ? { remote: matches[0] } : {}), ...(symref ? { symbolic: true } : {}) };
+    } else continue;
+    const refs = byCommit.get(sha) ?? [];
+    refs.push(ref);
+    byCommit.set(sha, refs);
+  }
+  return byCommit;
+}
+
 export async function getGitGraph(
   cwd: string,
   options?: { branch?: string; showRemotes?: boolean; maxCount?: number; skip?: number },
@@ -170,6 +205,10 @@ export async function getGitGraph(
     listGitRemotes(repoRoot),
     listLocalGitBranches(repoRoot),
   ]);
+
+  let headSha = "";
+  try { headSha = (await git(repoRoot, ["rev-parse", "--verify", "HEAD"])).trim(); } catch { /* empty repository */ }
+  const refsByCommit = await listGitGraphRefs(repoRoot, remotes, currentBranch);
 
   const maxCount = Math.max(1, Math.min(10000, options?.maxCount ?? 1000));
   const skip = Math.max(0, options?.skip ?? 0);
@@ -221,10 +260,11 @@ export async function getGitGraph(
     const trimmed = raw.trim();
     if (!trimmed) continue;
     const parts = trimmed.split("\x00");
-    const [sha, parentsStr, author, authorEmail, committedAt, subject, refNames] = parts;
+    const [sha, parentsStr, author, authorEmail, committedAt, subject] = parts;
     if (!sha || sha.length < 4) continue;
     const parents = parentsStr ? parentsStr.trim().split(/\s+/).filter(Boolean) : [];
-    const refs = parseGitRefs(refNames ?? "", remotes, currentBranch);
+    const refs = (refsByCommit.get(sha) ?? []).filter((ref) => options?.showRemotes !== false || ref.type !== "remote");
+    if (sha === headSha) refs.unshift({ type: "head", name: "HEAD", current: true });
 
     parsedCommits.push({
       sha,
@@ -247,6 +287,8 @@ export async function getGitGraph(
     branches,
     currentBranch,
     hasMore,
+    headSha,
+    remotes,
   };
 }
 

@@ -283,6 +283,10 @@ async function listRegisteredWorktrees(cwd: string): Promise<{ path: string; bra
   return worktrees;
 }
 
+export async function findRegisteredBranchWorktree(cwd: string, branch: string): Promise<{ path: string; branch: string | null; missing: boolean } | undefined> {
+  return (await listRegisteredWorktrees(cwd)).find((worktree) => worktree.branch === branch);
+}
+
 export async function listWorktrees(cwd: string): Promise<WorktreeInfo[]> {
   // Prunable worktrees point at missing/broken gitdirs and cannot be browsed
   // or selected usefully. Also skip vanished paths even if git has not marked
@@ -328,7 +332,7 @@ export async function addWorktree(cwd: string, branch: string): Promise<{ path: 
   // Before the folder check: a branch pi-web already made a worktree for also
   // has its folder, and the answer is where that checkout is, not the folder.
   // Missing entries too: a deleted folder's entry still holds the branch.
-  const holder = (await listRegisteredWorktrees(repoRoot)).find((worktree) => worktree.branch === trimmed);
+  const holder = await findRegisteredBranchWorktree(repoRoot, trimmed);
   if (holder) throw new WorktreeBranchInUseError(trimmed, holder.path, holder.missing);
   const baseDir = `${resolve(repoRoot)}-worktrees`;
   const worktreePath = join(baseDir, dirName);

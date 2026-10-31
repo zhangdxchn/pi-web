@@ -22,6 +22,59 @@
   }
 }
 
+.refList {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 65%;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  overscroll-behavior-inline: contain;
+}
+.refList::-webkit-scrollbar { height: 3px; }
+.refButton {
+  cursor: pointer;
+}
+@media (pointer: coarse) { .refButton { min-height: 26px; } }
+.refButton:focus-visible, .rowActions:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.rowActions {
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 4px;
+  padding: 0 6px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+}
+.row:hover .rowActions, .row:focus-within .rowActions, .rowActions:focus-visible { opacity: 1; }
+.rowActions:hover { background: var(--bg-hover); }
+@media (pointer: coarse) { .rowActions { opacity: 1; min-height: 28px; } }
+.actionForm { padding: 4px 8px 8px; color: var(--text); font-size: 12px; }
+.actionForm label { display: block; margin: 8px 0; color: var(--text-muted); }
+.actionForm label > input:not([type="checkbox"]), .actionForm select {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  min-height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+.actionForm input:focus-visible, .actionForm select:focus-visible { outline: 2px solid var(--accent); }
+.actionForm .actionCheck { display: flex; align-items: center; gap: 6px; }
+.actionTarget { color: var(--text-muted); overflow-wrap: anywhere; }
+.actionWarning { color: var(--text); line-height: 1.45; overflow-wrap: anywhere; }
+.actionDetails { max-height: 160px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+
 .columnResize {
   position: absolute;
   z-index: 2;
