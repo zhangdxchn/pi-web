@@ -16,6 +16,7 @@ import {
   ghostTopFor,
   groupBlocks,
   groupDropAt,
+  sectionDropAt,
   type GroupBlock,
   type GroupDrop,
   type SidebarLayout,
@@ -54,6 +55,7 @@ const GHOST_INDENT_PX = 4;
 const CLICK_SUPPRESS_MS = 600;
 
 type DragPhase = "pending" | "armed" | "dragging" | "cancelled";
+type DropTarget = GroupDrop | { sectionId: string | null; lineY: number };
 
 interface DragState {
   pointerId: number;
@@ -73,7 +75,7 @@ interface DragState {
   frame: number | null;
   /** The list's scrollTop as the drag left it: any other value means the browser scrolled it. */
   expectedScrollTop: number;
-  drop: GroupDrop | null;
+  drop: DropTarget | null;
   ghost: { left: number } | null;
 }
 
@@ -81,7 +83,7 @@ export interface GroupDragView {
   projectKey: string;
   /** "armed": a long-press picked the group up; "dragging": it follows the pointer. */
   phase: "armed" | "dragging";
-  drop: GroupDrop | null;
+  drop: DropTarget | null;
   /** The dragged group's block while dragging, else null. */
   source: GroupBlock | null;
 }
@@ -106,6 +108,7 @@ export interface GroupDragOptions {
   treeRef: RefObject<HTMLDivElement | null>;
   ghostRef: RefObject<HTMLDivElement | null>;
   onMove(projectKey: string, anchorKey: string, position: ProjectMovePosition): void;
+  onAssignSection?(projectKey: string, sectionId: string | null): void;
 }
 
 export interface GroupDragApi {
@@ -121,8 +124,11 @@ function distance(x1: number, y1: number, x2: number, y2: number): number {
   return Math.hypot(x2 - x1, y2 - y1);
 }
 
-function sameDrop(a: GroupDrop | null, b: GroupDrop | null): boolean {
-  return a === b || (a !== null && b !== null && a.anchorKey === b.anchorKey && a.position === b.position && a.lineY === b.lineY);
+function sameDrop(a: DropTarget | null, b: DropTarget | null): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.lineY !== b.lineY) return false;
+  if ("sectionId" in a) return "sectionId" in b && a.sectionId === b.sectionId;
+  return "anchorKey" in b && a.anchorKey === b.anchorKey && a.position === b.position;
 }
 
 /** Laid out: not display: none itself or inside something that is (the archive view, the files tab). */
@@ -152,10 +158,14 @@ export function useGroupDrag(options: GroupDragOptions): GroupDragApi {
         : null);
     };
 
-    const dropFor = (drag: DragState): GroupDrop | null => {
-      const inner = optionsRef.current.innerRef.current;
+    const dropFor = (drag: DragState): DropTarget | null => {
+      const options = optionsRef.current;
+      const inner = options.innerRef.current;
       if (!inner) return null;
-      return groupDropAt(blocksRef.current, drag.projectKey, drag.clientY - inner.getBoundingClientRect().top);
+      const y = drag.clientY - inner.getBoundingClientRect().top;
+      const section = sectionDropAt(options.rows, options.offsets, blocksRef.current, drag.projectKey, y);
+      if (section !== undefined) return options.onAssignSection ? section : null;
+      return groupDropAt(blocksRef.current, drag.projectKey, y);
     };
 
     // The ghost follows the pointer through its style, not through React
@@ -342,7 +352,8 @@ export function useGroupDrag(options: GroupDragOptions): GroupDragApi {
         drag.clientX = event.clientX;
         drag.clientY = event.clientY;
         const drop = dropFor(drag);
-        if (drop) optionsRef.current.onMove(drag.projectKey, drop.anchorKey, drop.position);
+        if (drop && "sectionId" in drop) optionsRef.current.onAssignSection?.(drag.projectKey, drop.sectionId);
+        else if (drop) optionsRef.current.onMove(drag.projectKey, drop.anchorKey, drop.position);
       }
       // A plain click (still pending) toggles the group; after a pick-up it must not.
       if (drag.phase !== "pending") suppressClickUntilRef.current = event.timeStamp + CLICK_SUPPRESS_MS;

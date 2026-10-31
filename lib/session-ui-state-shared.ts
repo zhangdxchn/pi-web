@@ -28,11 +28,16 @@ export const MAX_PROJECT_NAME_LENGTH = 80;
 export const MAX_PROJECT_NAMES = 1000;
 /** Most UTF-8 bytes `projectNames` takes as JSON: its keys are projectKeys, as long as the order's. */
 export const PROJECT_NAMES_MAX_BYTES = 256 * 1024;
+/** Sections and project memberships each have the same count and byte budget. */
+export const MAX_PROJECT_SECTIONS = 1000;
+export const PROJECT_SECTIONS_MAX_BYTES = 256 * 1024;
+const MAX_SECTION_ID_LENGTH = 128;
 
 /** Epoch ms, keyed by the FAMILY ROOT session id. */
 export interface SessionUiFamilyState { pinnedAt?: number; archivedAt?: number }
 /** Keyed by projectKey (`workspaceKeyOf`). */
 export interface SessionUiProjectState { pinnedAt: number; root: string }
+export interface SessionUiSection { id: string; name: string }
 export interface SessionUiState {
   version: 1;
   /** Monotonic, bumped by the server on every changing write. */
@@ -52,6 +57,10 @@ export interface SessionUiState {
    * they are. Absent while empty.
    */
   projectNames?: Record<string, string>;
+  /** User sections in display order; absent means the original flat project list. */
+  sections?: SessionUiSection[];
+  /** Section id by projectKey; absent keys are ungrouped. */
+  projectSections?: Record<string, string>;
 }
 /** Where a moved project goes, next to its anchor. */
 export type ProjectMovePosition = "before" | "after";
@@ -73,12 +82,18 @@ export type SessionUiStateRequest =
    */
   | { action: "move-project"; projectKey: string; anchorKey: string; position: ProjectMovePosition; add: string[] }
   /** A project's display name; null (or an empty name) removes it, and the folder name shows again. */
-  | { action: "rename-project"; projectKey: string; name: string | null };
+  | { action: "rename-project"; projectKey: string; name: string | null }
+  | { action: "create-section"; id: string; name: string; projectKey?: string }
+  | { action: "rename-section"; id: string; name: string }
+  | { action: "delete-section"; id: string }
+  | { action: "move-section"; id: string; anchorId: string; position: ProjectMovePosition }
+  | { action: "assign-project-section"; projectKey: string; sectionId: string | null; add: string[] };
 
 export interface SessionUiStateResponse { state: SessionUiState }
 
 /** Why `POST /api/sessions/ui-state` refused; `error` is English diagnostic text. "full": no room for another project name. */
-export type SessionUiStateRefusalReason = "request-denied" | "content-type" | "invalid-request" | "full" | "locked" | "internal";
+export type SessionUiStateRefusalReason = "request-denied" | "content-type" | "invalid-request" | "full" | "locked" | "duplicate-section" | "missing-section" | "internal";
+export type SessionUiSectionRefusal = "full" | "duplicate-section" | "missing-section";
 export interface SessionUiStateErrorResponse { error: string; reason: SessionUiStateRefusalReason }
 
 const hasOwn = (record: object, key: string): boolean => Object.prototype.hasOwnProperty.call(record, key);
@@ -120,6 +135,17 @@ export function projectDisplayName(value: unknown): string | null | undefined {
   const name = value.trim();
   if (!name) return null;
   if (NOT_ONE_LINE.test(name) || [...name].length > MAX_PROJECT_NAME_LENGTH) return undefined;
+  return name;
+}
+
+function isSectionId(value: unknown): value is string {
+  return isSessionId(value) && value.length <= MAX_SECTION_ID_LENGTH;
+}
+
+/** Sections need a name and cannot be confused with the built-in ungrouped label. */
+export function sectionDisplayName(value: unknown): string | undefined {
+  const name = projectDisplayName(value);
+  if (typeof name !== "string" || name === "Ungrouped" || name === "未分组" || name === "未分組") return undefined;
   return name;
 }
 
@@ -242,6 +268,40 @@ export function normalizeSessionUiState(value: unknown): SessionUiState | null {
       bytes += size;
     }
     if (count > 0) state.projectNames = names;
+  }
+  if (Array.isArray(value.sections)) {
+    const sections: SessionUiSection[] = [];
+    const ids = new Set<string>();
+    const names = new Set<string>();
+    let bytes = 1;
+    for (const entry of value.sections) {
+      if (!isPlainObject(entry) || !isSectionId(entry.id)) continue;
+      const name = sectionDisplayName(entry.name);
+      if (!name || ids.has(entry.id) || names.has(name)) continue;
+      const section = { id: entry.id, name };
+      const size = utf8.encode(JSON.stringify(section)).length + 1;
+      if (sections.length >= MAX_PROJECT_SECTIONS || bytes + size > PROJECT_SECTIONS_MAX_BYTES) continue;
+      sections.push(section);
+      ids.add(section.id);
+      names.add(name);
+      bytes += size;
+    }
+    if (sections.length > 0) state.sections = sections;
+  }
+  if (isPlainObject(value.projectSections) && state.sections) {
+    const ids = new Set(state.sections.map((section) => section.id));
+    const memberships: Record<string, string> = {};
+    let count = 0;
+    let bytes = 1;
+    for (const [key, id] of Object.entries(value.projectSections)) {
+      if (!isProjectString(key) || typeof id !== "string" || !ids.has(id)) continue;
+      const size = nameEntryBytes(key, id);
+      if (count >= MAX_PROJECT_SECTIONS || bytes + size > PROJECT_SECTIONS_MAX_BYTES) continue;
+      memberships[key] = id;
+      count++;
+      bytes += size;
+    }
+    if (count > 0) state.projectSections = memberships;
   }
   return state;
 }
@@ -366,8 +426,31 @@ export function parseSessionUiStateRequest(body: unknown): ParseResult {
       }
       return { ok: true, request: { action: "rename-project", projectKey: body.projectKey, name } };
     }
+    case "create-section":
+    case "rename-section": {
+      if (!isSectionId(body.id)) return { ok: false, error: "id must be a valid section id" };
+      const name = sectionDisplayName(body.name);
+      if (!name) return { ok: false, error: "name must be a non-reserved single line of at most 80 characters" };
+      if (body.action === "rename-section") return { ok: true, request: { action: body.action, id: body.id, name } };
+      if (body.projectKey !== undefined && !isProjectString(body.projectKey)) return { ok: false, error: "projectKey must be a valid project key" };
+      return { ok: true, request: { action: body.action, id: body.id, name, ...(body.projectKey !== undefined ? { projectKey: body.projectKey } : {}) } };
+    }
+    case "delete-section":
+      if (!isSectionId(body.id)) return { ok: false, error: "id must be a valid section id" };
+      return { ok: true, request: { action: body.action, id: body.id } };
+    case "move-section":
+      if (!isSectionId(body.id) || !isSectionId(body.anchorId) || body.id === body.anchorId) return { ok: false, error: "id and anchorId must be different section ids" };
+      if (body.position !== "before" && body.position !== "after") return { ok: false, error: "position must be before or after" };
+      return { ok: true, request: { action: body.action, id: body.id, anchorId: body.anchorId, position: body.position } };
+    case "assign-project-section": {
+      if (!isProjectString(body.projectKey)) return { ok: false, error: "projectKey must be a valid project key" };
+      if (body.sectionId !== null && !isSectionId(body.sectionId)) return { ok: false, error: "sectionId must be a section id or null" };
+      const add = body.add === undefined ? { ok: true as const, keys: [] } : parseProjectKeys(body.add, "add", true);
+      if (!add.ok) return add;
+      return { ok: true, request: { action: body.action, projectKey: body.projectKey, sectionId: body.sectionId, add: add.keys } };
+    }
     default:
-      return { ok: false, error: "action must be \"set\", \"restore\", \"pin-project\", \"add-projects\", \"move-project\" or \"rename-project\"" };
+      return { ok: false, error: "action must be \"set\", \"restore\", \"pin-project\", \"add-projects\", \"move-project\" or \"rename-project\"; section actions are also supported" };
   }
 }
 
@@ -424,6 +507,8 @@ function copyState(state: SessionUiState): SessionUiState {
   // Only when present: an explicit undefined would not equal an absent field.
   if (state.projectOrder) copy.projectOrder = [...state.projectOrder];
   if (state.projectNames) copy.projectNames = { ...state.projectNames };
+  if (state.sections) copy.sections = state.sections.map((section) => ({ ...section }));
+  if (state.projectSections) copy.projectSections = { ...state.projectSections };
   return copy;
 }
 
@@ -546,6 +631,31 @@ function capProjectOrder(order: string[], keep: ReadonlySet<string>): string[] {
   return orderFits(count, bytes) ? kept : fitProjectOrder(kept);
 }
 
+/** Change membership and move an unpinned project to the top without evicting saved keys. */
+function assignProjectSection(
+  state: SessionUiState,
+  projectKey: string,
+  sectionId: string | null,
+  add: readonly string[],
+): { changed: boolean; reason?: SessionUiSectionRefusal } {
+  if (sectionId !== null && !state.sections?.some((section) => section.id === sectionId)) return { changed: false, reason: "missing-section" };
+  const previous = state.projectSections && hasOwn(state.projectSections, projectKey) ? state.projectSections[projectKey] : null;
+  if (previous === sectionId) return { changed: false };
+  const memberships = { ...state.projectSections };
+  if (sectionId === null) delete memberships[projectKey];
+  else memberships[projectKey] = sectionId;
+  if (Object.keys(memberships).length > MAX_PROJECT_SECTIONS || namesBytes(memberships) > PROJECT_SECTIONS_MAX_BYTES) return { changed: false, reason: "full" };
+  if (!hasOwn(state.projects, projectKey)) {
+    const order = state.projectOrder ?? [];
+    const moved = [projectKey, ...missingProjectKeys(order, add).filter((key) => key !== projectKey), ...order.filter((key) => key !== projectKey)];
+    if (!orderFits(moved.length, orderBytes(moved))) return { changed: false, reason: "full" };
+    writeProjectOrder(state, moved);
+  }
+  if (Object.keys(memberships).length) state.projectSections = memberships;
+  else delete state.projectSections;
+  return { changed: true };
+}
+
 /**
  * Pure. Returns a NEW state (never mutates input) and whether anything changed. Does NOT touch revision.
  * The project order never depends on `now`, and its requests are relative
@@ -556,7 +666,7 @@ export function applySessionUiStateRequest(
   state: SessionUiState,
   request: SessionUiStateRequest,
   now: number,
-): { state: SessionUiState; changed: boolean } {
+): { state: SessionUiState; changed: boolean; reason?: SessionUiSectionRefusal } {
   const next = copyState(state);
   let changed = false;
   switch (request.action) {
@@ -612,6 +722,71 @@ export function applySessionUiStateRequest(
       // copy goes through the same rule, so a name the server refuses changes nothing.
       const name = projectDisplayName(request.name);
       if (name !== undefined && writeProjectName(next, request.projectKey, name)) changed = true;
+      break;
+    }
+    case "create-section": {
+      const sections = next.sections ?? [];
+      const existing = sections.find((section) => section.id === request.id);
+      if ((existing && existing.name !== request.name) || sections.some((section) => section.name === request.name && section.id !== request.id)) {
+        return { state, changed: false, reason: "duplicate-section" };
+      }
+      if (!existing) {
+        const updated = [...sections, { id: request.id, name: request.name }];
+        if (updated.length > MAX_PROJECT_SECTIONS || utf8.encode(JSON.stringify(updated)).length > PROJECT_SECTIONS_MAX_BYTES) return { state, changed: false, reason: "full" };
+        next.sections = updated;
+        changed = true;
+      }
+      if (request.projectKey !== undefined) {
+        const assigned = assignProjectSection(next, request.projectKey, request.id, []);
+        if (assigned.reason) return { state, changed: false, reason: assigned.reason };
+        changed ||= assigned.changed;
+      }
+      break;
+    }
+    case "rename-section": {
+      const sections = next.sections ?? [];
+      const section = sections.find((item) => item.id === request.id);
+      if (!section) return { state, changed: false, reason: "missing-section" };
+      if (sections.some((item) => item.id !== request.id && item.name === request.name)) return { state, changed: false, reason: "duplicate-section" };
+      if (section.name !== request.name) {
+        section.name = request.name;
+        if (utf8.encode(JSON.stringify(sections)).length > PROJECT_SECTIONS_MAX_BYTES) return { state, changed: false, reason: "full" };
+        changed = true;
+      }
+      break;
+    }
+    case "delete-section": {
+      const sections = next.sections ?? [];
+      if (!sections.some((section) => section.id === request.id)) break;
+      const kept = sections.filter((section) => section.id !== request.id);
+      if (kept.length) next.sections = kept;
+      else delete next.sections;
+      if (next.projectSections) {
+        const memberships = Object.fromEntries(Object.entries(next.projectSections).filter(([, id]) => id !== request.id));
+        if (Object.keys(memberships).length) next.projectSections = memberships;
+        else delete next.projectSections;
+      }
+      changed = true;
+      break;
+    }
+    case "move-section": {
+      const sections = next.sections ?? [];
+      const from = sections.findIndex((section) => section.id === request.id);
+      const anchor = sections.findIndex((section) => section.id === request.anchorId);
+      if (from < 0 || anchor < 0) return { state, changed: false, reason: "missing-section" };
+      const reordered = sections.filter((section) => section.id !== request.id);
+      const index = reordered.findIndex((section) => section.id === request.anchorId);
+      reordered.splice(index + (request.position === "after" ? 1 : 0), 0, sections[from]);
+      if (!sameOrder(sections.map((section) => section.id), reordered.map((section) => section.id))) {
+        next.sections = reordered;
+        changed = true;
+      }
+      break;
+    }
+    case "assign-project-section": {
+      const assigned = assignProjectSection(next, request.projectKey, request.sectionId, request.add);
+      if (assigned.reason) return { state, changed: false, reason: assigned.reason };
+      changed = assigned.changed;
       break;
     }
   }

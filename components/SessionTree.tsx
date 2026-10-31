@@ -116,6 +116,9 @@ export interface SessionTreeProps {
   onShowLess(key: string): void;
   onToggleUnread(): void;
   onTogglePinned(): void;
+  onToggleSection(sectionId: string | null): void;
+  onSectionMenu(sectionId: string, opener: HTMLElement): void;
+  onCreateSection(opener: HTMLElement): void;
   onArchiveFamily(family: SessionFamily): void;
   onRestoreFamily(family: SessionFamily): void;
   onOpenRowMenu(row: SessionRow, anchor: SidebarMenuAnchor, opener: HTMLElement | null): void;
@@ -144,6 +147,7 @@ export interface SessionTreeProps {
   onRevealHandled?(id: number): void;
   /** A group dropped next to another of its band. Without it no group can be dragged. */
   onMoveGroup?(projectKey: string, anchorKey: string, position: ProjectMovePosition): void;
+  onAssignSection?(projectKey: string, sectionId: string | null): void;
 }
 
 /** Rows rendered beyond each edge of the viewport. */
@@ -282,6 +286,7 @@ export function SessionTree(props: SessionTreeProps): ReactNode {
     treeRef,
     ghostRef,
     onMove: (projectKey, anchorKey, position) => handlersRef.current.onMoveGroup?.(projectKey, anchorKey, position),
+    onAssignSection: props.onAssignSection ? (projectKey, sectionId) => handlersRef.current.onAssignSection?.(projectKey, sectionId) : undefined,
   });
   const dragView = groupDrag.view;
   // The header holding the pointer stays mounted while auto-scroll moves it away.
@@ -395,7 +400,7 @@ export function SessionTree(props: SessionTreeProps): ReactNode {
     }
   }, [visibleIndices]);
 
-  const hasTreeRows = rows.some((row) => row.kind === "session" || row.kind === "group" || row.kind === "unread-header" || row.kind === "pinned-header");
+  const hasTreeRows = rows.some((row) => row.kind === "session" || row.kind === "group" || row.kind === "section" || row.kind === "unread-header" || row.kind === "pinned-header");
   const showEmpty = !loading && !error && emptyLabel !== null && !hasTreeRows;
   // While dragging: the group's block is dimmed in place (groups never fold
   // up under the pointer), a line marks the drop, and a pill with the
@@ -449,6 +454,9 @@ export function SessionTree(props: SessionTreeProps): ReactNode {
               if (row.kind === "archive-group") {
                 return <ArchiveGroupRowView key={row.key} row={row} top={top} height={height} menuOpen={menuOpen} handlers={handlersRef} />;
               }
+              if (row.kind === "section") {
+                return <SectionRowView key={row.key} row={row} top={top} height={height} menuOpen={menuOpen} handlers={handlersRef} />;
+              }
               if (row.kind === "group") {
                 const renaming = row.project.key === renamingProjectKey;
                 return (
@@ -460,7 +468,7 @@ export function SessionTree(props: SessionTreeProps): ReactNode {
                     menuOpen={menuOpen}
                     renaming={renaming}
                     // A header that is a name field is no handle to drag.
-                    canDrag={canMoveGroups && !renaming && groupsPerBand[row.project.pinned ? "pinned" : "other"] > 1}
+                    canDrag={canMoveGroups && !renaming && (groupsPerBand[row.project.pinned ? "pinned" : "other"] > 1 || (!row.project.pinned && Boolean(props.onAssignSection) && rows.some((item) => item.kind === "section")))}
                     dragPhase={dragView?.projectKey === row.project.key ? dragView.phase : null}
                     drag={groupDrag.handlers}
                     handlers={handlersRef}
@@ -524,6 +532,7 @@ const SessionRowView = memo(function SessionRowView({
   const nowDate = new Date(now);
   const className = [
     "session-tree-row session-tree-session",
+    context === "group" && !row.project.pinned && row.project.sectionId !== undefined ? "is-sectioned" : "",
     status.selected ? "is-selected" : "",
     retainedRead ? "is-retained" : "",
     status.running ? "is-running" : "",
@@ -916,6 +925,7 @@ const GroupRowView = memo(function GroupRowView({
   const rowRef = useRef<HTMLDivElement>(null);
   const className = [
     "session-tree-row session-tree-group",
+    !project.pinned && project.sectionId !== undefined ? "is-sectioned" : "",
     project.current ? "is-current" : "",
     menuOpen ? "is-active" : "",
     dragPhase === "armed" ? "is-drag-armed" : "",
@@ -971,6 +981,7 @@ const GroupRowView = memo(function GroupRowView({
         <ChevronIcon size={12} strokeWidth={3} className={`session-tree-chevron${expanded ? " is-open" : ""}`} />
         <span className="session-tree-group-name">{project.name}</span>
         {project.pinned && <PinIcon size={10} className="session-tree-group-pin" label={t("sidebar.pinnedProject")} />}
+        {project.pinned && project.sectionName && <span className="session-tree-project-section-name" title={project.sectionName}>· {project.sectionName}</span>}
         {!expanded && <ActivitySummary running={row.running} awaiting={row.awaiting} t={t} />}
       </button>
       <span className="session-tree-group-actions">
@@ -1005,6 +1016,28 @@ const GroupRowView = memo(function GroupRowView({
   );
 });
 
+const SectionRowView = memo(function SectionRowView({ row, top, height, menuOpen, handlers }: {
+  row: Extract<SidebarRow, { kind: "section" }>;
+  top: number;
+  height: number;
+  menuOpen: boolean;
+  handlers: Handlers;
+}) {
+  const { t } = useI18n();
+  const name = row.name ?? t("sidebar.ungroupedSection");
+  return (
+    <div className={`session-tree-row session-tree-pinned-header session-tree-section${menuOpen ? " is-active" : ""}`} style={rowStyle(top, height)} data-row-key={row.key}>
+      <button type="button" className="session-tree-pinned-toggle" aria-expanded={!row.collapsed} onClick={() => handlers.current.onToggleSection(row.sectionId)}>
+        <ChevronIcon size={12} strokeWidth={3} className={`session-tree-chevron${row.collapsed ? "" : " is-open"}`} />
+        <span className="session-tree-pinned-label">{name}</span>
+        <span className="session-tree-pinned-count">· {row.count}</span>
+        {row.collapsed && <ActivitySummary running={row.running} awaiting={row.awaiting} unread={row.unread} t={t} />}
+      </button>
+      {row.sectionId !== null && <span className="session-tree-group-actions"><button type="button" className="session-tree-group-action" aria-label={t("sidebar.sectionActions", { name })} aria-haspopup="menu" aria-expanded={menuOpen} onClick={(event) => handlers.current.onSectionMenu(row.sectionId!, event.currentTarget)}><MoreIcon size={13} /></button></span>}
+    </div>
+  );
+});
+
 /** The rows with at most one control: section headers, "show more", footer links. */
 const PlainRowView = memo(function PlainRowView({
   row,
@@ -1013,7 +1046,7 @@ const PlainRowView = memo(function PlainRowView({
   handlers,
   onMoreAction,
 }: {
-  row: Exclude<SidebarRow, { kind: "session" | "group" | "archive-group" | "spacer" }>;
+  row: Exclude<SidebarRow, { kind: "session" | "group" | "section" | "archive-group" | "spacer" }>;
   top: number;
   height: number;
   handlers: Handlers;
@@ -1060,7 +1093,7 @@ const PlainRowView = memo(function PlainRowView({
     case "group-more": {
       const moreKey = row.kind === "unread-more" ? UNREAD_MORE_KEY : row.kind === "pinned-more" ? PINNED_MORE_KEY : row.projectKey;
       return (
-        <div className="session-tree-row session-tree-more" style={style} data-row-key={row.key}>
+        <div className={`session-tree-row session-tree-more${row.kind === "group-more" && row.sectioned ? " is-sectioned" : ""}`} style={style} data-row-key={row.key}>
           {row.hidden > 0 && (
             <button
               type="button"
@@ -1086,10 +1119,14 @@ const PlainRowView = memo(function PlainRowView({
     }
     case "group-empty":
       return (
-        <div className="session-tree-row session-tree-group-empty" style={style} data-row-key={row.key}>
+        <div className={`session-tree-row session-tree-group-empty${!row.project.pinned && row.project.sectionId !== undefined ? " is-sectioned" : ""}`} style={style} data-row-key={row.key}>
           {t("sidebar.noLiveSessions")}
         </div>
       );
+    case "section-empty":
+      return <div className="session-tree-row session-tree-group-empty" style={style} data-row-key={row.key}>{t(row.pinnedCount > 0 ? "sidebar.sectionPinnedAbove" : "sidebar.emptySection")}</div>;
+    case "footer-new-section":
+      return <div className="session-tree-row session-tree-footer" style={style} data-row-key={row.key}><button type="button" className="session-tree-footer-button" onClick={(event) => handlers.current.onCreateSection(event.currentTarget)}><PlusIcon size={12} /><span className="session-tree-footer-label">{t("sidebar.createSection")}</span></button></div>;
     case "footer-open":
       return (
         <div className="session-tree-row session-tree-footer" style={style} data-row-key={row.key}>

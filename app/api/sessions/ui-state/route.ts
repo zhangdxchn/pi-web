@@ -3,6 +3,7 @@ import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security"
 import {
   readSessionUiState,
   SessionUiStateLockedError,
+  SessionUiStateSectionError,
   updateSessionUiState,
 } from "@/lib/session-ui-state";
 import {
@@ -66,6 +67,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ state } satisfies SessionUiStateResponse, { headers: NO_STORE });
   } catch (error) {
     if (error instanceof SessionUiStateLockedError) return refusal(409, "locked", error.message);
+    if (error instanceof SessionUiStateSectionError) return refusal(409, error.reason, error.message);
     return refusal(500, "internal", error instanceof Error ? error.message : String(error));
   }
 }

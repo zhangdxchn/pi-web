@@ -26,7 +26,7 @@ import { workspaceKeyOf } from "./workspace-memory";
 export type SidebarLayout = "desktop" | "mobile";
 export type SidebarRowKind =
   | "unread-header" | "pinned-header" | "session" | "unread-more" | "pinned-more" | "group" | "group-more" | "group-empty"
-  | "spacer" | "footer-open" | "footer-archived" | "archive-group";
+  | "section" | "section-empty" | "spacer" | "footer-new-section" | "footer-open" | "footer-archived" | "archive-group";
 
 /**
  * Per-kind row heights: one rhythm. Session rows, the section headers (a
@@ -37,8 +37,8 @@ export type SidebarRowKind =
  * group from the next and the groups from the footer.
  */
 export const SIDEBAR_ROW_HEIGHTS: Record<SidebarLayout, Record<SidebarRowKind, number>> = {
-  desktop: { "unread-header": 28, "pinned-header": 28, session: 28, "unread-more": 26, "pinned-more": 26, group: 28, "group-more": 26, "group-empty": 28, spacer: 8, "footer-open": 28, "footer-archived": 28, "archive-group": 28 },
-  mobile: { "unread-header": 44, "pinned-header": 44, session: 44, "unread-more": 36, "pinned-more": 36, group: 44, "group-more": 36, "group-empty": 44, spacer: 8, "footer-open": 44, "footer-archived": 44, "archive-group": 44 },
+  desktop: { "unread-header": 28, "pinned-header": 28, session: 28, "unread-more": 26, "pinned-more": 26, group: 28, "group-more": 26, "group-empty": 28, section: 28, "section-empty": 28, spacer: 8, "footer-new-section": 28, "footer-open": 28, "footer-archived": 28, "archive-group": 28 },
+  mobile: { "unread-header": 44, "pinned-header": 44, session: 44, "unread-more": 36, "pinned-more": 36, group: 44, "group-more": 36, "group-empty": 44, section: 44, "section-empty": 44, spacer: 8, "footer-new-section": 44, "footer-open": 44, "footer-archived": 44, "archive-group": 44 },
 };
 export const GROUP_VISIBLE_LIMIT = 6;
 export const PINNED_VISIBLE_LIMIT = 8;
@@ -48,12 +48,14 @@ export const SHOW_MORE_STEP = 20;
 /** `moreShown` entries for the global sections' "show more". */
 export const PINNED_MORE_KEY = "pinned";
 export const UNREAD_MORE_KEY = "unread";
+/** Browser preference key for the built-in ungrouped section, not a section id. */
+export const UNGROUPED_SECTION_KEY = "__ungrouped__";
 
 /**
  * `name` is what the sidebar shows: the user's display name for the project
  * (`customName`, from its group menu's Rename…), else its folder's name.
  */
-export interface SidebarProject { key: string; root: string; name: string; customName: string | null; pinned: boolean; current: boolean }
+export interface SidebarProject { key: string; root: string; name: string; customName: string | null; pinned: boolean; current: boolean; sectionId?: string | null; sectionName?: string }
 export interface SidebarFamilyStatus { running: boolean; awaiting: boolean; unread: boolean; pinned: boolean; selected: boolean; transient: boolean }
 
 // A folded header's counts follow its rows' right column: a family awaiting
@@ -65,9 +67,12 @@ export type SidebarRow =
   | { kind: "unread-more"; key: "unread-more"; hidden: number; canShowLess: boolean; nextShown: number }
   | { kind: "pinned-more"; key: "pinned-more"; hidden: number; canShowLess: boolean; nextShown: number }
   | { kind: "group"; key: string; project: SidebarProject; expanded: boolean; running: number; awaiting: number }
-  | { kind: "group-more"; key: string; projectKey: string; hidden: number; canShowLess: boolean; nextShown: number }
+  | { kind: "group-more"; key: string; projectKey: string; hidden: number; canShowLess: boolean; nextShown: number; sectioned?: boolean }
   | { kind: "group-empty"; key: string; project: SidebarProject }
+  | { kind: "section"; key: string; sectionId: string | null; name: string | null; count: number; collapsed: boolean; running: number; awaiting: number; unread: number }
+  | { kind: "section-empty"; key: string; pinnedCount: number }
   | { kind: "spacer"; key: "top-spacer" | "unread-spacer" | "pinned-spacer" | "footer-spacer" | `group-spacer:${string}` }
+  | { kind: "footer-new-section"; key: "footer-new-section" }
   | { kind: "footer-open"; key: "footer-open" }
   | { kind: "footer-archived"; key: "footer-archived"; count: number }
   | { kind: "archive-group"; key: string; project: SidebarProject; count: number; expanded: boolean };
@@ -94,6 +99,8 @@ export interface SessionTreeInput {
   moreShown: Readonly<Record<string, number>>;
   unreadCollapsed: boolean;
   pinnedCollapsed: boolean;
+  /** Folded section ids, including UNGROUPED_SECTION_KEY; a browser preference. */
+  sectionCollapsed?: ReadonlySet<string>;
 }
 
 export interface SessionTreeModel {
@@ -258,15 +265,17 @@ function familyStatus(family: SessionFamily, input: FamilyFlagsInput): SidebarFa
 
 function activityCounts(
   families: readonly SessionFamily[],
-  input: Pick<SessionTreeInput, "runningIds" | "awaitingIds">,
-): { running: number; awaiting: number } {
+  input: Pick<SessionTreeInput, "runningIds" | "awaitingIds" | "unreadIds">,
+): { running: number; awaiting: number; unread: number } {
   let running = 0;
   let awaiting = 0;
+  let unread = 0;
   for (const family of families) {
     if (input.awaitingIds && anyMemberIn(family, input.awaitingIds)) awaiting++;
     else if (anyMemberIn(family, input.runningIds)) running++;
+    if (anyMemberIn(family, input.unreadIds)) unread++;
   }
-  return { running, awaiting };
+  return { running, awaiting, unread };
 }
 
 function familyProjectKey(family: SessionFamily): string {
@@ -304,6 +313,8 @@ function createProjectResolver(
         ?? pinnedEntry?.root
         ?? key;
       const customName = storedProjectName(uiState, key) ?? null;
+      const sectionId = uiState.projectSections && Object.hasOwn(uiState.projectSections, key) ? uiState.projectSections[key] : null;
+      const section = uiState.sections?.find((item) => item.id === sectionId);
       const project: SidebarProject = {
         key,
         root,
@@ -311,6 +322,7 @@ function createProjectResolver(
         customName,
         pinned: pinnedEntry !== undefined,
         current,
+        ...(uiState.sections?.length ? { sectionId: section?.id ?? null, ...(section ? { sectionName: section.name } : {}) } : {}),
       };
       projects.set(key, project);
       return project;
@@ -552,37 +564,71 @@ export function buildSessionTree(input: SessionTreeInput): SessionTreeModel {
     indexed.filter(({ project }) => !project.pinned),
     (a, b) => compareDesc(activityOf(a.project), activityOf(b.project)) || a.index - b.index,
   );
-  const orderedProjects = [...pinnedProjects, ...otherProjects];
+  const sections = uiState.sections ?? [];
+  const orderedProjects = sections.length
+    ? [...pinnedProjects, ...sections.flatMap((section) => otherProjects.filter((project) => project.sectionId === section.id)), ...otherProjects.filter((project) => !project.sectionId)]
+    : [...pinnedProjects, ...otherProjects];
   const unorderedKeys = (band: SidebarProject[]) => band.filter((project) => !rank.has(project.key)).map((project) => project.key);
   const unorderedKeysByBand = { pinned: unorderedKeys(pinnedProjects), other: unorderedKeys(otherProjects) };
   const projectKeysToRecord = orderedProjects
     .filter((project) => !rank.has(project.key) && recordable(project))
     .map((project) => project.key);
 
-  for (const [index, project] of orderedProjects.entries()) {
-    // A gap between two groups, open or folded (#1338): headers right on the
-    // rows above them read as one list.
-    if (index > 0) rows.push({ kind: "spacer", key: `group-spacer:${project.key}` });
+  let hasGroup = false;
+  const appendProject = (project: SidebarProject) => {
+    if (hasGroup) rows.push({ kind: "spacer", key: `group-spacer:${project.key}` });
+    hasGroup = true;
     const groupFamilies = projectFamilies.get(project.key) ?? [];
     const expanded = isGroupExpanded(project, input.groupExpansion);
     const { running, awaiting } = activityCounts(groupFamilies, input);
     rows.push({ kind: "group", key: `group:${project.key}`, project, expanded, running, awaiting });
-
-    if (expanded) {
-      if (groupFamilies.length === 0) {
-        rows.push({ kind: "group-empty", key: `empty:${project.key}`, project });
-      } else {
-        const { visible, revealed, nextShown } = visibleFamilies(groupFamilies, GROUP_VISIBLE_LIMIT, shownMoreFor(input.moreShown, project.key), input);
-        for (const family of visible) rows.push(sessionRow(family, "group", project, input));
-        const more = moreRowState(groupFamilies.length, visible.length, revealed);
-        if (more) rows.push({ kind: "group-more", key: `more:${project.key}`, projectKey: project.key, ...more, nextShown });
+    if (!expanded) return;
+    if (groupFamilies.length === 0) {
+      rows.push({ kind: "group-empty", key: `empty:${project.key}`, project });
+    } else {
+      const { visible, revealed, nextShown } = visibleFamilies(groupFamilies, GROUP_VISIBLE_LIMIT, shownMoreFor(input.moreShown, project.key), input);
+      for (const family of visible) rows.push(sessionRow(family, "group", project, input));
+      const more = moreRowState(groupFamilies.length, visible.length, revealed);
+      if (more) rows.push({ kind: "group-more", key: `more:${project.key}`, projectKey: project.key, ...more, nextShown, ...(!project.pinned && project.sectionId !== undefined ? { sectioned: true } : {}) });
+    }
+  };
+  if (sections.length === 0) {
+    for (const project of orderedProjects) appendProject(project);
+  } else {
+    for (const project of pinnedProjects) appendProject(project);
+    // Unread families still contribute to a visible project's folded Section
+    // summary, but their rows stay exclusively in the global unread section.
+    // Pinned families were already outside the project before unread grouping.
+    const sectionGlobalFamilies = new Map<string, SessionFamily[]>();
+    for (const family of unreadSectionFamilies) {
+      if (isFamilyPinned(family, uiState, runningIds)) continue;
+      const key = familyProjectKey(family);
+      const list = sectionGlobalFamilies.get(key);
+      if (list) list.push(family);
+      else sectionGlobalFamilies.set(key, [family]);
+    }
+    const buckets = [...sections.map((section) => ({ id: section.id as string | null, name: section.name as string | null })), { id: null, name: null }];
+    for (const bucket of buckets) {
+      const key = bucket.id ?? UNGROUPED_SECTION_KEY;
+      const members = otherProjects.filter((project) => (project.sectionId ?? null) === bucket.id);
+      const collapsed = input.sectionCollapsed?.has(key) ?? false;
+      const activity = activityCounts(members.flatMap((project) => [
+        ...(projectFamilies.get(project.key) ?? []),
+        ...(sectionGlobalFamilies.get(project.key) ?? []),
+      ]), input);
+      rows.push({ kind: "section", key: `section:${key}`, sectionId: bucket.id, name: bucket.name, count: members.length, collapsed, ...activity });
+      hasGroup = false;
+      if (!collapsed) {
+        if (members.length === 0) rows.push({ kind: "section-empty", key: `section-empty:${key}`, pinnedCount: pinnedProjects.filter((project) => (project.sectionId ?? null) === bucket.id).length });
+        else for (const project of members) appendProject(project);
       }
     }
   }
 
   // One spacer parts the groups from the footer, as one parts the pinned
   // section from them.
-  if (orderedProjects.length > 0) rows.push({ kind: "spacer", key: "footer-spacer" });
+  if (orderedProjects.length > 0 || sections.length > 0) rows.push({ kind: "spacer", key: "footer-spacer" });
+  rows.push({ kind: "footer-new-section", key: "footer-new-section" });
   rows.push({ kind: "footer-open", key: "footer-open" });
   if (archivedCount > 0) rows.push({ kind: "footer-archived", key: "footer-archived", count: archivedCount });
 
@@ -742,7 +788,7 @@ export function getRowOffsets(rows: readonly SidebarRow[], layout: SidebarLayout
  * pinned section above the first, another group, the footer below the last.
  * Two neighbours share the spacer between them.
  */
-export interface GroupBlock { key: string; pinned: boolean; top: number; bottom: number; gapAbove: number; gapBelow: number }
+export interface GroupBlock { key: string; pinned: boolean; sectionId?: string | null; top: number; bottom: number; gapAbove: number; gapBelow: number }
 
 /** A row that belongs to the group above it. */
 function isGroupMemberRow(row: SidebarRow): boolean {
@@ -768,6 +814,7 @@ export function groupBlocks(rows: readonly SidebarRow[], offsets: readonly numbe
     blocks.push({
       key: row.project.key,
       pinned: row.project.pinned,
+      ...(row.project.sectionId !== undefined ? { sectionId: row.project.sectionId } : {}),
       top: offsets[index],
       bottom: offsets[end],
       gapAbove: offsets[index] - offsets[above],
@@ -776,6 +823,28 @@ export function groupBlocks(rows: readonly SidebarRow[], offsets: readonly numbe
     index = end;
   }
   return blocks;
+}
+
+/** Header drop: undefined outside a section, null when it cannot accept this project. */
+export function sectionDropAt(
+  rows: readonly SidebarRow[], offsets: readonly number[], blocks: readonly GroupBlock[], projectKey: string, y: number,
+): { sectionId: string | null; lineY: number } | null | undefined {
+  const index = rows.findIndex((_row, position) => y >= offsets[position] && y < offsets[position + 1]);
+  if (index < 0) return undefined;
+  const row = rows[index];
+  const source = blocks.find((block) => block.key === projectKey);
+  if (row.kind === "section") {
+    if (!source || source.pinned || source.sectionId === row.sectionId) return null;
+    return { sectionId: row.sectionId, lineY: offsets[index + 1] };
+  }
+  // A different section's body is not a reorder target in the source section.
+  if (source && !source.pinned && source.sectionId !== undefined) {
+    for (let position = index; position >= 0; position--) {
+      const ancestor = rows[position];
+      if (ancestor.kind === "section") return ancestor.sectionId === source.sectionId ? undefined : null;
+    }
+  }
+  return undefined;
 }
 
 /** Where a dragged group would go: next to `anchorKey`, with its drop line at `lineY` (content coordinates). */
@@ -799,7 +868,7 @@ const DROP_LINE_MIN_Y = 3;
 export function groupDropAt(blocks: readonly GroupBlock[], draggedKey: string, y: number): GroupDrop | null {
   const dragged = blocks.find((block) => block.key === draggedKey);
   if (!dragged) return null;
-  const band = blocks.filter((block) => block.pinned === dragged.pinned);
+  const band = blocks.filter((block) => block.pinned === dragged.pinned && (dragged.pinned || block.sectionId === dragged.sectionId));
   const from = band.indexOf(dragged);
   const others = band.filter((block) => block !== dragged);
   if (others.length === 0) return null;
@@ -823,7 +892,7 @@ export function adjacentProjectMove(
 ): { anchorKey: string; position: ProjectMovePosition } | null {
   const project = projects.find((item) => item.key === key);
   if (!project) return null;
-  const band = projects.filter((item) => item.pinned === project.pinned);
+  const band = projects.filter((item) => item.pinned === project.pinned && (project.pinned || item.sectionId === project.sectionId));
   const index = band.indexOf(project);
   const neighbour = band[direction === "up" ? index - 1 : index + 1];
   if (!neighbour) return null;
