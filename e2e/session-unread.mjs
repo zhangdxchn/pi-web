@@ -195,6 +195,7 @@ export async function checkUnreadSection({ browser, base, artifacts, api, post, 
         await row(page, "group", groupId).waitFor({ state: "visible" });
         await header(page).waitFor({ state: "detached" });
         await row(page, "pinned", pinnedId).locator(".session-tree-main").click();
+        await page.waitForURL((url) => url.searchParams.get("session") === pinnedId);
         await showSessions(page);
 
         // Fold the section with an unread session other than the selected one;
