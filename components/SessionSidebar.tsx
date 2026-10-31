@@ -554,6 +554,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // Sessions whose subagents can still report back with a run there: not done yet (#1434).
   const [subagentsActiveSessionIds, setSubagentsActiveSessionIds] = useState<Set<string>>(() => new Set());
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(() => loadUnreadSessionIds());
+  // A read row stays in unread while this page still has that family open.
+  const [retainedUnreadRootId, setRetainedUnreadRootId] = useState<string | null>(null);
   const previousRunningSessionIdsRef = useRef<Set<string>>(new Set());
   const previousActiveSessionIdsRef = useRef<Set<string>>(new Set());
   const currentSuppressedCompletionSessionIdsRef = useRef<Set<string>>(new Set());
@@ -1386,6 +1388,17 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     () => new Map(sessionFamilies.map((family) => [family.root.id, family])),
     [sessionFamilies],
   );
+  // A switch, archive, deletion or a fresh unread marker ends this page's retention.
+  useEffect(() => {
+    setRetainedUnreadRootId((retained) => {
+      if (!retained) return retained;
+      const family = familyByRootId.get(retained);
+      if (!family || isFamilyArchived(family, uiState, runningSessionIds)) return null;
+      const ids = familyIds(family);
+      return selectedSessionId && ids.includes(selectedSessionId) && !ids.some((id) => unreadSessionIds.has(id))
+        ? retained : null;
+    });
+  }, [familyByRootId, selectedSessionId, unreadSessionIds, uiState, runningSessionIds]);
 
   // Every session id of an archived family (search tags them), and how many
   // families each project has in the archive.
@@ -1462,12 +1475,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     awaitingIds: awaitingInputSessionIds,
     unreadIds: unreadSessionIds,
     selectedSessionId,
+    retainedUnreadRootId,
     currentProject,
     groupExpansion: shownGroupExpansion,
     moreShown,
     unreadCollapsed,
     pinnedCollapsed,
-  }), [allSessions, uiState, runningSessionIds, awaitingInputSessionIds, unreadSessionIds, selectedSessionId, currentProject, shownGroupExpansion, moreShown, unreadCollapsed, pinnedCollapsed]);
+  }), [allSessions, uiState, runningSessionIds, awaitingInputSessionIds, unreadSessionIds, selectedSessionId, retainedUnreadRootId, currentProject, shownGroupExpansion, moreShown, unreadCollapsed, pinnedCollapsed]);
   // Built while the archive view is rendered, its way out included: it
   // leaves as it was, not empty.
   const archiveMounted = archiveMotion.archiveMounted;
@@ -2260,18 +2274,43 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     : null;
 
   const handleSelectFamily = useCallback((row: SessionRow) => {
-    if (row.context === "unread") {
-      const active = document.activeElement;
-      // A phone closes the drawer on selection; never move focus into it.
-      if (!isMobile && active instanceof Element && active.closest(`[data-row-key="${CSS.escape(row.key)}"]`)) {
-        focusFamilyAfterMove(row, "home");
-      }
-      // A session manually marked unread while already open has the same
-      // selected id, so the selected-id effect alone would not clear it.
+    // A phone closes the drawer after a pick. A retained row stays mounted,
+    // so release its focus rather than leave it inside the hidden drawer.
+    const active = document.activeElement;
+    if (isMobile && active instanceof HTMLElement && active.closest(`[data-row-key="${CSS.escape(row.key)}"]`)) {
+      active.blur();
+    }
+    if (row.context === "unread" && row.status.unread) {
+      // The key stays the same after marking read, so focus and position stay
+      // with this row. This also covers an already-selected family marked unread.
+      setRetainedUnreadRootId(row.family.root.id);
       markFamilyRead(row.family, true);
     }
     handleSelectSessionFromList(row.family.root);
-  }, [focusFamilyAfterMove, handleSelectSessionFromList, isMobile, markFamilyRead]);
+  }, [handleSelectSessionFromList, isMobile, markFamilyRead]);
+
+  // An explicit locate leaves the retention, opens its real home and uses the
+  // virtual tree's reveal to keep the selected row visible and focusable.
+  const handleLocateRetained = useCallback((row: SessionRow) => {
+    setRetainedUnreadRootId(null);
+    if (row.status.pinned) {
+      setPinnedCollapsed(false);
+      savePinnedCollapsed(false);
+    } else {
+      const next = { ...groupExpansion };
+      delete next[row.project.key];
+      next[row.project.key] = true;
+      saveGroupChoices(next, [row.project.key]);
+    }
+    const fromRow = `[data-row-key="${CSS.escape(row.key)}"]`;
+    treeRevealIdRef.current += 1;
+    setTreeReveal({
+      id: treeRevealIdRef.current,
+      at: Date.now(),
+      rowKey: `session:${row.status.pinned ? "pinned" : "group"}:${row.family.root.id}`,
+      takeFocusFrom: (active) => active.closest(fromRow) !== null,
+    });
+  }, [groupExpansion, saveGroupChoices]);
 
   // Every group at once: a group's menu, or Alt+click on its header.
   // Re-inserted, so the choices count as the newest ones kept.
@@ -2687,6 +2726,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     confirmDeleteRootId,
     activeMenuRowKey,
     onSelectFamily: handleSelectFamily,
+    onLocateRetained: handleLocateRetained,
     onToggleGroup: handleToggleGroup,
     onShowMore: handleShowMore,
     onShowLess: handleShowLess,

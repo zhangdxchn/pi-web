@@ -41,6 +41,7 @@ const defaults = {
   confirmDeleteRootId: null,
   activeMenuRowKey: null,
   onSelectFamily: noop,
+  onLocateRetained: noop,
   onToggleGroup: noop,
   onShowMore: noop,
   onShowLess: noop,
@@ -257,6 +258,23 @@ test("a running row shows the labelled spinner and cannot be archived from the r
 test("an unread row shows the labelled unread dot", () => {
   const html = rowMarkup(render({ rows: [sessionRow(session("new"), { status: { unread: true } })] }), "session:group:new");
   assert.match(html, /<span class="session-tree-meta is-unread" title="New activity"><span class="session-tree-unread" role="img" aria-label="New session activity"><\/span><\/span>/);
+});
+
+test("a retained read row shows its state and a separate locate action", () => {
+  const row = sessionRow(session("read"), { context: "unread", status: { selected: true } });
+  const html = rowMarkup(render({ rows: [row] }), row.key);
+  assert.match(html, /session-tree-session is-selected is-retained/);
+  assert.match(html, /class="session-tree-read-status">Read<\/span>/);
+  assert.doesNotMatch(html, /class="session-tree-unread"/);
+  assert.match(html, /aria-label="Show first read in project app"/);
+  assert.ok(html.indexOf("</a>") < html.indexOf("session-tree-locate-action"), "the locate button is not nested in the link");
+  assert.doesNotMatch(html, /session-tree-quick-action/, "the retained row leaves room for locate");
+
+  const pinned = sessionRow(session("pin"), { context: "unread", status: { selected: true, pinned: true, running: true } });
+  const pinnedHtml = rowMarkup(render({ rows: [pinned] }), pinned.key);
+  assert.match(pinnedHtml, /aria-label="Show first pin in Pinned · app"/);
+  assert.match(pinnedHtml, /class="session-tree-read-status">Read<\/span>/);
+  assert.match(pinnedHtml, /sidebar-spin/);
 });
 
 test("an unread-section row shows both its project and status", () => {

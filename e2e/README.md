@@ -39,7 +39,7 @@ Coverage:
   General › File browser brings back the Sessions | Files tabs and returns,
   without remounting the file tree (its file search keeps its query).
 - Unknown sessions and paths outside the fixture project are rejected.
-- The unread section (`session-unread.mjs`, desktop and mobile) takes pinned and project sessions without duplicates; a simulated background run's completion enters it. Reading returns them, syncs across tabs, and preserves keyboard focus. A manually unread selected session clears on a second pick; the section's fold survives reload.
+- The unread section (`session-unread.mjs`, desktop and mobile) takes pinned and project sessions without duplicates; a simulated background run's completion enters it. Reading syncs across tabs while the selected read row stays until a switch, reload, archive or explicit locate. Locate unfolds the pinned section or project and preserves keyboard focus; the tests also cover the zero count, archive Undo, a 180px sidebar and the saved fold.
 - Sidebar sessions open in browser tabs (`session-navigation.mjs`, desktop
   Chromium, one context so tabs share storage): a plain click and Enter
   select in place without a page load; Ctrl+click, middle-click and the row

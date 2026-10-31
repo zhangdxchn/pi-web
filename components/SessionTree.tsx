@@ -106,6 +106,8 @@ export interface SessionTreeProps {
   /** Row whose menu is open: kept mounted, its ⋯ shown pressed. A group row's key works too. */
   activeMenuRowKey: string | null;
   onSelectFamily(row: SessionRow): void;
+  /** Move the retained read row to its expanded home and reveal it. */
+  onLocateRetained(row: SessionRow): void;
   /** `all` (Alt+click): every group follows this one. */
   onToggleGroup(projectKey: string, all: boolean): void;
   /** Reveal SHOW_MORE_STEP more families; key is a projectKey or global section key. */
@@ -516,12 +518,14 @@ const SessionRowView = memo(function SessionRowView({
 }) {
   const { locale, t } = useI18n();
   const { family, context, status } = row;
+  const retainedRead = context === "unread" && !status.unread;
   const root = family.root;
   const title = sessionRowTitle(root);
   const nowDate = new Date(now);
   const className = [
     "session-tree-row session-tree-session",
     status.selected ? "is-selected" : "",
+    retainedRead ? "is-retained" : "",
     status.running ? "is-running" : "",
     context === "archive" ? "is-archived" : "",
     menuOpen ? "is-menu-open" : "",
@@ -604,6 +608,8 @@ const SessionRowView = memo(function SessionRowView({
     meta = <span className="session-tree-unread" role="img" aria-label={t("sidebar.newSessionActivity")} />;
     metaState = " is-unread";
     metaTitle = t("sidebar.newActivity");
+  } else if (retainedRead) {
+    meta = null;
   } else if (context === "pinned") {
     meta = <span className="session-tree-project">{row.project.name}</span>;
   } else {
@@ -612,7 +618,11 @@ const SessionRowView = memo(function SessionRowView({
 
   // Archive (or restore) one click away: desktop only, never for a running
   // family, which would come straight back.
-  const quickAction = layout === "desktop" && (context === "archive" || !status.running);
+  const quickAction = !retainedRead && layout === "desktop" && (context === "archive" || !status.running);
+  const locateLabel = t(status.pinned ? "sidebar.locateReadPinned" : "sidebar.locateReadProject", {
+    title,
+    project: row.project.name,
+  });
 
   const mainContent = (
     <>
@@ -632,6 +642,7 @@ const SessionRowView = memo(function SessionRowView({
       )}
       <span className={`session-tree-meta${metaState}${context === "unread" ? " has-project" : ""}`} title={metaTitle}>
         {context === "unread" && <span className="session-tree-project">{row.project.name}</span>}
+        {retainedRead && <span className="session-tree-read-status">{t("sidebar.read")}</span>}
         {meta}
       </span>
     </>
@@ -671,9 +682,23 @@ const SessionRowView = memo(function SessionRowView({
           {mainContent}
         </a>
       )}
-      {!status.transient && (
+      {(!status.transient || retainedRead) && (
         <span className="session-tree-actions">
-          {quickAction && (context === "archive" ? (
+          {retainedRead && (
+            <button
+              type="button"
+              className="session-tree-action session-tree-locate-action"
+              aria-label={locateLabel}
+              title={`${locateLabel}\n${row.project.root}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                handlers.current.onLocateRetained(row);
+              }}
+            >
+              <span aria-hidden="true">↗</span>
+            </button>
+          )}
+          {!status.transient && quickAction && (context === "archive" ? (
             <button
               type="button"
               className="session-tree-action session-tree-quick-action"
@@ -700,7 +725,7 @@ const SessionRowView = memo(function SessionRowView({
               <ArchiveIcon size={13} />
             </button>
           ))}
-          <button
+          {!status.transient && <button
             type="button"
             className={`session-tree-action session-tree-more-action${menuOpen ? " is-active" : ""}`}
             aria-label={t("sidebar.moreActions")}
@@ -714,7 +739,7 @@ const SessionRowView = memo(function SessionRowView({
             }}
           >
             <MoreIcon size={14} />
-          </button>
+          </button>}
         </span>
       )}
     </div>

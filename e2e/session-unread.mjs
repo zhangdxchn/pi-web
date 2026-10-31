@@ -14,7 +14,7 @@ export async function checkUnreadSection({ browser, base, artifacts, api, post, 
     for (const mobile of [false, true]) {
       const context = await browser.newContext({
         viewport: mobile ? { width: 390, height: 844 } : { width: 1280, height: 800 },
-        locale: "en-US", hasTouch: mobile, isMobile: mobile,
+        locale: "en-US", colorScheme: mobile ? "dark" : "light", hasTouch: mobile, isMobile: mobile,
       });
       await context.tracing.start({ screenshots: true, snapshots: true });
       const errors = [];
@@ -50,7 +50,10 @@ export async function checkUnreadSection({ browser, base, artifacts, api, post, 
       try {
         await page.goto(`${base}/?session=${currentId}`, { waitUntil: "domcontentloaded" });
         await showSessions(page);
-        await page.evaluate((ids) => localStorage.setItem("pi-web:unread-session-ids", JSON.stringify(ids)), [pinnedId, groupId]);
+        await page.evaluate((ids) => {
+          localStorage.setItem("pi-web:unread-session-ids", JSON.stringify(ids));
+          localStorage.setItem("pi-web:sidebar-pins-collapsed", "true");
+        }, [pinnedId, groupId]);
         await page.reload({ waitUntil: "domcontentloaded" });
         await showSessions(page);
         await row(page, "unread", pinnedId).waitFor({ state: "visible" });
@@ -93,26 +96,33 @@ export async function checkUnreadSection({ browser, base, artifacts, api, post, 
           await page.waitForFunction(() => !document.querySelector("#session-sidebar")?.contains(document.activeElement));
         }
         await showSessions(page);
-        await row(page, "pinned", pinnedId).waitFor({ state: "visible" });
+        await row(page, "unread", pinnedId).locator(".session-tree-read-status").waitFor({ state: "visible" });
         await row(second, "unread", pinnedId).waitFor({ state: "detached" });
-        assert.equal(await row(page, "unread", pinnedId).count(), 0);
+        assert.equal(await row(page, "pinned", pinnedId).count(), 0, "the retained row is not duplicated");
         if (!mobile) {
-          await page.waitForFunction((id) => document.activeElement?.closest(`[data-row-key="session:pinned:${id}"]`) !== null, pinnedId);
+          await page.waitForFunction((id) => document.activeElement?.closest(`[data-row-key="session:unread:${id}"]`) !== null, pinnedId);
         }
         assert.match(await header(page).innerText(), /Unread\s*·\s*1/i);
 
-        // Mark the already selected session unread, then select the same row:
-        // selectedSessionId does not change, but the marker must clear.
-        await (await openMenu(page, "pinned", pinnedId)).getByRole("menuitem", { name: /^Mark as unread/ }).click();
-        await row(page, "unread", pinnedId).waitFor({ state: "visible" });
+        // The selected family can be marked unread and read again without a
+        // selection change. The actual marker still syncs to the other tab.
+        await (await openMenu(page, "unread", pinnedId)).getByRole("menuitem", { name: /^Mark as unread/ }).click();
+        await row(page, "unread", pinnedId).locator(".session-tree-unread").waitFor({ state: "visible" });
         await row(second, "unread", pinnedId).waitFor({ state: "visible" });
         await row(page, "unread", pinnedId).locator(".session-tree-main").click();
         await showSessions(page);
-        await row(page, "pinned", pinnedId).waitFor({ state: "visible" });
+        await row(page, "unread", pinnedId).locator(".session-tree-read-status").waitFor({ state: "visible" });
         await row(second, "unread", pinnedId).waitFor({ state: "detached" });
+        const locatePinned = row(page, "unread", pinnedId).getByRole("button", { name: / in Pinned · / });
+        await locatePinned.click();
+        await row(page, "pinned", pinnedId).waitFor({ state: "visible" });
+        assert.equal(await page.evaluate(() => localStorage.getItem("pi-web:sidebar-pins-collapsed")), "false");
+        if (!mobile) {
+          await page.waitForFunction((id) => document.activeElement?.closest(`[data-row-key="session:pinned:${id}"]`) !== null, pinnedId);
+        }
 
-        // A deliberately folded project stays folded; a keyboard selection
-        // hands focus to its header instead of an unmounted destination row.
+        // The project stays folded while the newly read row remains under
+        // unread; an explicit locate opens it and scrolls to the same row.
         const groupHeader = page.locator(`[data-row-key=${JSON.stringify(`group:${projectKey}`)}] .session-tree-group-toggle`);
         await groupHeader.waitFor({ state: "visible" });
         if (await groupHeader.getAttribute("aria-expanded") === "true") await groupHeader.click();
@@ -122,16 +132,74 @@ export async function checkUnreadSection({ browser, base, artifacts, api, post, 
         await page.waitForURL((url) => url.searchParams.get("session") === groupId);
         await showSessions(page);
         assert.equal(await groupHeader.getAttribute("aria-expanded"), "false");
+        assert.match(await header(page).innerText(), /Unread\s*·\s*0/i);
+        await row(page, "unread", groupId).locator(".session-tree-read-status").waitFor({ state: "visible" });
+        await row(second, "unread", groupId).waitFor({ state: "detached" });
         if (!mobile) {
-          await page.waitForFunction((key) => document.activeElement?.closest(`[data-row-key="${CSS.escape(`group:${key}`)}"]`) !== null, projectKey);
+          await page.waitForFunction((id) => document.activeElement?.closest(`[data-row-key="session:unread:${id}"]`) !== null, groupId);
+          const resize = page.getByRole("separator", { name: "Resize sidebar", exact: true });
+          await resize.press("Home");
+          await page.waitForFunction(() => Math.abs(document.querySelector("#session-sidebar").getBoundingClientRect().width - 180) < 1);
+          const bounds = await row(page, "unread", groupId).evaluate((element) => {
+            const title = element.querySelector(".session-tree-title").getBoundingClientRect();
+            const read = element.querySelector(".session-tree-read-status").getBoundingClientRect();
+            const locate = element.querySelector(".session-tree-locate-action").getBoundingClientRect();
+            const more = element.querySelector(".session-tree-more-action").getBoundingClientRect();
+            const box = element.getBoundingClientRect();
+            return { titleWidth: title.width, titleRight: title.right, readLeft: read.left, readRight: read.right, locateLeft: locate.left, locateRight: locate.right, moreLeft: more.left, moreRight: more.right, right: box.right };
+          });
+          assert.ok(bounds.titleWidth >= 50, "the retained title keeps room in a 180px sidebar");
+          assert.ok(bounds.titleRight <= bounds.readLeft && bounds.readRight <= bounds.locateLeft && bounds.locateRight <= bounds.moreLeft && bounds.moreRight <= bounds.right, "read and locate controls do not overlap");
+          await resize.press("Enter");
         }
-        await groupHeader.click();
+        const locateProject = row(page, "unread", groupId).getByRole("button", { name: / in project / });
+        if (mobile) await locateProject.click();
+        else { await locateProject.focus(); await locateProject.press("Enter"); }
+        await row(page, "group", groupId).waitFor({ state: "visible" });
+        assert.equal(await groupHeader.getAttribute("aria-expanded"), "true");
+        if (!mobile) {
+          await page.waitForFunction((id) => document.activeElement?.closest(`[data-row-key="session:group:${id}"]`) !== null, groupId);
+        }
+        await header(page).waitFor({ state: "detached" });
+
+        // Retention is page-local: reopening after a refresh puts the family
+        // in its expanded home, without resurrecting the unread marker.
+        await (await openMenu(page, "group", groupId)).getByRole("menuitem", { name: /^Mark as unread/ }).click();
+        await row(page, "unread", groupId).locator(".session-tree-main").click();
+        await showSessions(page);
+        await row(page, "unread", groupId).locator(".session-tree-read-status").waitFor({ state: "visible" });
+        await page.reload({ waitUntil: "domcontentloaded" });
+        await showSessions(page);
         await row(page, "group", groupId).waitFor({ state: "visible" });
         await header(page).waitFor({ state: "detached" });
 
+        // Switching to a different session also ends retention.
+        await (await openMenu(page, "group", groupId)).getByRole("menuitem", { name: /^Mark as unread/ }).click();
+        await row(page, "unread", groupId).locator(".session-tree-main").click();
+        await showSessions(page);
+        await row(page, "unread", groupId).locator(".session-tree-read-status").waitFor({ state: "visible" });
+        await row(page, "pinned", pinnedId).locator(".session-tree-main").click();
+        await showSessions(page);
+        await row(page, "group", groupId).waitFor({ state: "visible" });
+        await header(page).waitFor({ state: "detached" });
+
+        // Archiving a retained row ends its retention; Undo restores it to
+        // its normal project, not as a read row in unread.
+        await (await openMenu(page, "group", groupId)).getByRole("menuitem", { name: /^Mark as unread/ }).click();
+        await row(page, "unread", groupId).locator(".session-tree-main").click();
+        await showSessions(page);
+        await row(page, "unread", groupId).locator(".session-tree-read-status").waitFor({ state: "visible" });
+        await (await openMenu(page, "unread", groupId)).getByRole("menuitem", { name: /^Archive/ }).click();
+        await row(page, "unread", groupId).waitFor({ state: "detached" });
+        await page.getByRole("button", { name: "Undo", exact: true }).click();
+        await row(page, "group", groupId).waitFor({ state: "visible" });
+        await header(page).waitFor({ state: "detached" });
+        await row(page, "pinned", pinnedId).locator(".session-tree-main").click();
+        await showSessions(page);
+
         // Fold the section with an unread session other than the selected one;
         // reload restores the fold without marking that other session read.
-        await (await openMenu(page, "pinned", pinnedId)).getByRole("menuitem", { name: /^Mark as unread/ }).click();
+        await (await openMenu(page, "group", groupId)).getByRole("menuitem", { name: /^Mark as unread/ }).click();
         await header(page).waitFor({ state: "visible" });
         await header(page).click();
         assert.equal(await header(page).getAttribute("aria-expanded"), "false");
@@ -140,9 +208,9 @@ export async function checkUnreadSection({ browser, base, artifacts, api, post, 
         await showSessions(page);
         await header(page).waitFor({ state: "visible" });
         await page.waitForFunction(() => document.querySelector('[data-row-key="unread-header"] button')?.getAttribute("aria-expanded") === "false");
-        assert.equal(await row(page, "unread", pinnedId).count(), 0);
+        assert.equal(await row(page, "unread", groupId).count(), 0);
         await header(page).click();
-        await row(page, "unread", pinnedId).waitFor({ state: "visible" });
+        await row(page, "unread", groupId).waitFor({ state: "visible" });
 
         // Exercise the existing polling transition without a model call: a
         // background run ends, and the same unread marker feeds the new group.
@@ -165,7 +233,7 @@ export async function checkUnreadSection({ browser, base, artifacts, api, post, 
         await row(page, "unread", currentId).waitFor({ state: "visible" });
         await page.unroute("**/api/agent/running");
         assert.deepEqual(errors, []);
-        console.log(`PASS: ${mobile ? "mobile" : "desktop"} unread grouping, completion, pin, focus, cross-tab read and fold persistence`);
+        console.log(`PASS: ${mobile ? "mobile" : "desktop"} unread retention, locate, completion, pin, focus, cross-tab read and fold persistence`);
         await context.tracing.stop();
       } catch (error) {
         await page.screenshot({ path: join(artifacts, `session-unread-${mobile ? "mobile" : "desktop"}-failure.png`) }).catch(() => {});

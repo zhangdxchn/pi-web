@@ -81,6 +81,8 @@ export interface SessionTreeInput {
   awaitingIds?: ReadonlySet<string>;
   unreadIds: ReadonlySet<string>;
   selectedSessionId: string | null;
+  /** The read family left in unread while it remains selected, only in this page. */
+  retainedUnreadRootId?: string | null;
   /** projectFor(selectedCwd); shown as a group even without sessions. */
   currentProject: { key: string; root: string } | null;
   /**
@@ -428,6 +430,9 @@ export function buildSessionTree(input: SessionTreeInput): SessionTreeModel {
 
   let archivedCount = 0;
   const unreadFamilies: SessionFamily[] = [];
+  // In activity order, including the one already-read row retained here.
+  const unreadSectionFamilies: SessionFamily[] = [];
+  let retainedFamily: SessionFamily | undefined;
   const pinnedFamilies: SessionFamily[] = [];
   // Insertion order follows family activity (newest first).
   const projectFamilies = new Map<string, SessionFamily[]>();
@@ -447,6 +452,12 @@ export function buildSessionTree(input: SessionTreeInput): SessionTreeModel {
     if (!family.root.transient) savedKeys.add(key);
     if (anyMemberIn(family, input.unreadIds)) {
       unreadFamilies.push(family);
+      unreadSectionFamilies.push(family);
+      continue;
+    }
+    if (family.root.id === input.retainedUnreadRootId && isMember(family, input.selectedSessionId)) {
+      retainedFamily = family;
+      unreadSectionFamilies.push(family);
       continue;
     }
     if (isFamilyPinned(family, uiState, runningIds)) {
@@ -461,14 +472,16 @@ export function buildSessionTree(input: SessionTreeInput): SessionTreeModel {
   // A spacer keeps the first section's header off the toolbar's line (#1338).
   const rows: SidebarRow[] = [{ kind: "spacer", key: "top-spacer" }];
 
-  // Unread section: activity order from listSessionFamilies. Every family is
-  // unread here, so unread alone must not bypass this section's page limit.
-  if (unreadFamilies.length > 0) {
-    const { running, awaiting } = activityCounts(unreadFamilies, input);
+  // Page and count actual unread families only: the selected read row is an
+  // extra, in its activity position, even when it is the section's last row.
+  if (unreadSectionFamilies.length > 0) {
+    const { running, awaiting } = activityCounts(unreadSectionFamilies, input);
     rows.push({ kind: "unread-header", key: "unread-header", count: unreadFamilies.length, collapsed: input.unreadCollapsed, running, awaiting });
     if (!input.unreadCollapsed) {
       const { visible, revealed, nextShown } = visibleFamilies(unreadFamilies, UNREAD_VISIBLE_LIMIT, shownMoreFor(input.moreShown, UNREAD_MORE_KEY), input);
-      for (const family of visible) {
+      const visibleUnread = new Set(visible);
+      for (const family of unreadSectionFamilies) {
+        if (family !== retainedFamily && !visibleUnread.has(family)) continue;
         rows.push(sessionRow(family, "unread", resolver.get(familyProjectKey(family)), input));
       }
       const more = moreRowState(unreadFamilies.length, visible.length, revealed);
