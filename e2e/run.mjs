@@ -28,6 +28,7 @@ import { checkGitGraphActions, createGitGraphActionFixtures } from "./git-graph-
 import { checkGitGraphUncommitted, createGitGraphUncommittedFixtures } from "./git-graph-uncommitted.mjs";
 import { checkGitGraphLargeFiles } from "./git-graph-large-files.mjs";
 import { checkChangedFilesTree, createChangedFilesTreeFixture } from "./changed-files-tree.mjs";
+import { checkOpenInApp } from "./open-in-app.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const mode = process.env.E2E_SERVER_MODE || "dev";
@@ -587,6 +588,7 @@ try {
   await checkGitGraphUncommitted({ browser, base, artifacts, fixtures: gitGraphUncommitted });
   await checkChangedFilesTree({ browser, base, artifacts, fixture: changedFilesTree });
   await checkProjectNavigation({ browser, base, artifacts, fixture: projectNavigation, otherSessionId: BRANCH, api, post });
+  await checkOpenInApp({ browser, base, cwd: project, sessionId: RICH, artifacts });
   // The unread check uses its own contexts and restores its pin; run it last
   // so its sidebar's project-order bookkeeping cannot affect earlier checks.
   await checkUnreadSection({ browser, base, artifacts, api, post, pinnedId: BRANCH, groupId: RICH, currentId: CODE_BACKGROUND });

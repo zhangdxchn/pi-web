@@ -96,6 +96,7 @@ import { DirectoryPicker } from "./DirectoryPicker";
 import { DismissButton } from "./DismissButton";
 import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
 import { PiWebTitle } from "./PiWebTitle";
+import { OpenInAppButton } from "./OpenInAppButton";
 import { ProjectWorktreePicker, type ProjectWorktreePickerHandle, type WorktreeRemoval } from "./ProjectWorktreePicker";
 import { SessionSearch } from "./SessionSearch";
 import { SessionTree, sessionRowTitle, type SessionTreeReveal } from "./SessionTree";
@@ -127,16 +128,14 @@ import {
   UploadIcon,
 } from "./SidebarIcons";
 
-interface FileManagerAvailability {
-  supported: boolean;
-  reason: string | null;
-  platform: string;
-}
-
 // Server error codes with a translation; any other code is shown verbatim.
 const FILE_MANAGER_ERROR_KEYS: Record<string, string> = {
   remote: "sidebar.openInExplorerRemoteOnly",
   "unsupported-platform": "sidebar.openInExplorerUnsupported",
+  "request-denied": "sidebar.openAppRequestDenied",
+  "application-invalid": "sidebar.openAppInvalid",
+  "application-not-found": "sidebar.openAppNotFound",
+  "application-launch-failed": "sidebar.openAppLaunchFailed",
 };
 
 declare global {
@@ -556,7 +555,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [changesCollapsed, setChangesCollapsed] = useState(true);
   const [showIgnoredFiles, setShowIgnoredFiles] = useState(false);
   const [explorerRefreshDone, setExplorerRefreshDone] = useState(false);
-  const [fileManager, setFileManager] = useState<FileManagerAvailability | null>(null);
   const [fileManagerError, setFileManagerError] = useState<string | null>(null);
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
   const [awaitingInputSessionIds, setAwaitingInputSessionIds] = useState<Set<string>>(() => new Set());
@@ -853,53 +851,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     };
   }, [loadSessions, refreshKey]);
 
-  // Only the server can raise a file-manager window, and only when the browser
-  // runs on that same machine. Ask it once so the button can pick the right
-  // label (Explorer / Finder / generic) and disable itself when unavailable.
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/open-in-explorer")
-      .then((res) => res.ok ? res.json() as Promise<FileManagerAvailability> : null)
-      .then((data) => { if (!cancelled && data) setFileManager(data); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
-
   // A failure belongs to the project it happened on.
   useEffect(() => {
     setFileManagerError(null);
   }, [selectedCwd, selectedCwdProp]);
 
-  /** Resolves true when it failed: the message is then in the files' body. */
-  const openInFileManager = useCallback(async (): Promise<boolean> => {
-    const dir = selectedCwd ?? selectedCwdProp;
-    if (!dir) return false;
-    try {
-      const res = await fetch("/api/open-in-explorer", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd: dir }),
-      });
-      if (res.ok) {
-        setFileManagerError(null);
-        return false;
-      }
-      const data = await res.json().catch(() => ({})) as { error?: string };
-      setFileManagerError(data.error ?? `HTTP ${res.status}`);
-    } catch (error) {
-      setFileManagerError(error instanceof Error ? error.message : String(error));
-    }
-    return true;
-  }, [selectedCwd, selectedCwdProp]);
-
-  const fileManagerLabel = t(
-    fileManager?.platform === "darwin"
-      ? "sidebar.openInFinder"
-      : fileManager?.platform === "win32"
-        ? "sidebar.openInExplorer"
-        : "sidebar.openInFileManager",
-  );
-  const fileManagerUnavailable = fileManager?.supported === false;
   const fileManagerErrorMessage = fileManagerError
     ? t(FILE_MANAGER_ERROR_KEYS[fileManagerError] ?? fileManagerError)
     : null;
@@ -2947,22 +2903,16 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     </ToolbarIconButton>
   );
   const fileManagerButton = (
-    <ToolbarIconButton
-      onClick={() => {
-        void openInFileManager().then((failed) => {
-          // Its failure shows in the files' body. Below the sessions this key
-          // is in the header row, there while the section is folded too: a
-          // folded section opens, else the message would wait unseen.
-          if (failed && stacked) setFilesSectionCollapsed(false);
-        });
+    <OpenInAppButton
+      cwd={explorerCwd}
+      mobile={isMobile}
+      iconSize={keyIconSize}
+      onError={(error) => {
+        setFileManagerError(error);
+        // A folded files section must open to reveal the error.
+        if (error && stacked) setFilesSectionCollapsed(false);
       }}
-      disabled={!explorerCwd || fileManagerUnavailable}
-      title={fileManagerUnavailable
-        ? t(fileManager?.reason === "remote" ? "sidebar.openInExplorerRemoteOnly" : "sidebar.openInExplorerUnsupported")
-        : fileManagerLabel}
-    >
-      <FolderIcon size={keyIconSize} />
-    </ToolbarIconButton>
+    />
   );
   const uploadButton = (
     <ToolbarIconButton

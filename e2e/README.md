@@ -77,6 +77,7 @@ Coverage:
   A real repository checks the sidebar, working and commit List/Tree switches,
   independent saved choices, nested folders, changed file statuses and both diff kinds.
   No existing repository or remote is changed.
+- The files' Open project in menu (`open-in-app.mjs`) uses mocked application launches on desktop and mobile. It checks the current cwd, the desktop double click, saved defaults, custom applications, error feedback and the remote-disabled state without starting any real app.
 - The model picker, with a synthetic catalog: on a phone, a simulated keyboard
   (visual viewport shrink, pan, a late height with no event) keeps the same
   filter focused and the list in the visible viewport. Native phone keyboards
