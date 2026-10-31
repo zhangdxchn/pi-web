@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { showSidebarFiles } from "./sidebar.mjs";
+import { checkGitGraphToolbarLayout } from "./git-graph-layout.mjs";
 
 // The graph API is scripted to exercise loading, pagination, root commits and
 // errors without depending on the fixture repository's actual history.
@@ -72,6 +73,25 @@ export async function checkGitGraphI18n({ browser, base, artifacts, fixture }) {
     const panel = page.locator("#file-panel");
     await panel.getByText("Loading Git graph…", { exact: true }).waitFor();
     releaseInitial();
+    await panel.getByText("Fixture child commit", { exact: true }).waitFor();
+    const panelStyle = await panel.evaluate((element) => ({
+      width: element.style.getPropertyValue("--right-panel-width"),
+      transition: element.style.transition,
+    }));
+    for (const [width, minSearchWidth] of [[300, 245], [360, 295], [520, 340], [700, 340]]) {
+      await panel.evaluate((element, nextWidth) => {
+        element.style.transition = "none";
+        element.style.setProperty("--right-panel-width", `${nextWidth}px`);
+      }, width);
+      await checkGitGraphToolbarLayout({
+        panel, search: "Search commits (message, SHA, author)…", allBranches: "All branches",
+        refresh: "Refresh graph", minSearchWidth, placeholderFits: width >= 520,
+      });
+    }
+    await panel.evaluate((element, saved) => {
+      element.style.setProperty("--right-panel-width", saved.width);
+      element.style.transition = saved.transition;
+    }, panelStyle);
     await panel.getByText("Fixture child commit", { exact: true }).click();
     await panel.getByText("Loading file changes…", { exact: true }).waitFor();
     releaseDetail();
@@ -81,21 +101,21 @@ export async function checkGitGraphI18n({ browser, base, artifacts, fixture }) {
     const variants = [
       {
         radio: null, locale: "en", title: "Git Graph", search: "Search commits (message, SHA, author)…",
-        all: "All branches", current: "Current branch: feature/demo", count: "Commits: 40+",
+        all: "All branches", current: "Current branch: feature/demo", count: "Loaded: 40",
         remote: "Show remote branches", refresh: "Refresh graph", close: "Close details",
         parent: `Go to parent commit ${rootSha}`, files: "Changed files: 1", diff: "View Diff ↗",
         load: "Load older commits (+500)", clear: "Clear commit search", copied: "Copied ✓", settings: "Settings", general: "General",
       },
       {
         radio: "简体中文", locale: "zh-CN", title: "Git Graph 图谱", search: "搜索提交（信息、SHA、作者）…",
-        all: "全部分支", current: "当前分支：feature/demo", count: "提交：40+",
+        all: "全部分支", current: "当前分支：feature/demo", count: "已加载：40",
         remote: "显示远端分支", refresh: "刷新图谱", close: "关闭详情",
         parent: `跳转至父提交 ${rootSha}`, files: "变更文件：1", diff: "查看 Diff ↗",
         load: "加载更早提交 (+500)", clear: "清除提交搜索", copied: "已复制 ✓", settings: "设置", general: "常规",
       },
       {
         radio: "繁體中文", locale: "zh-TW", title: "Git Graph 圖譜", search: "搜尋提交（訊息、SHA、作者）…",
-        all: "所有分支", current: "目前分支：feature/demo", count: "提交：40+",
+        all: "所有分支", current: "目前分支：feature/demo", count: "已載入：40",
         remote: "顯示遠端分支", refresh: "重新整理圖譜", close: "關閉詳情",
         parent: `前往父提交 ${rootSha}`, files: "變更檔案：1", diff: "檢視 Diff ↗",
         load: "載入更早的提交 (+500)", clear: "清除提交搜尋", copied: "已複製 ✓", settings: "設定", general: "一般",
@@ -119,7 +139,7 @@ export async function checkGitGraphI18n({ browser, base, artifacts, fixture }) {
       await panel.getByRole("button", { name: variant.refresh, exact: true }).waitFor();
       await panel.getByRole("button", { name: variant.close, exact: true }).waitFor();
       await panel.getByText(variant.remote, { exact: true }).waitFor();
-      await panel.getByText(variant.count, { exact: true }).waitFor();
+      await panel.getByTestId("git-graph-body").getByText(variant.count, { exact: true }).waitFor({ state: "attached" });
       await panel.getByText(variant.files, { exact: true }).waitFor();
       await panel.getByText(variant.diff, { exact: true }).waitFor();
       await panel.getByRole("button", { name: variant.load, exact: true }).waitFor({ state: "attached" });
@@ -166,11 +186,19 @@ export async function checkGitGraphI18n({ browser, base, artifacts, fixture }) {
     await panel.getByLabel("搜尋提交（訊息、SHA、作者）…").waitFor({ state: "visible" });
     await panel.getByRole("button", { name: "所有分支", exact: true }).waitFor();
     await panel.getByRole("button", { name: "重新整理圖譜", exact: true }).waitFor();
+    for (const [width, minSearchWidth] of [[390, 300], [320, 245]]) {
+      await page.setViewportSize({ width, height: 844 });
+      await checkGitGraphToolbarLayout({
+        panel, search: "搜尋提交（訊息、SHA、作者）…", allBranches: "所有分支",
+        refresh: "重新整理圖譜", minSearchWidth, placeholderFits: width >= 390,
+      });
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
     await panel.getByText("Fixture child commit", { exact: true }).click();
     await panel.getByText("變更檔案：1", { exact: true }).waitFor();
     await panel.getByRole("button", { name: "關閉詳情", exact: true }).waitFor();
     assert.deepEqual(errors, []);
-    console.log("PASS: Git Graph follows Settings in English, Simplified and Traditional Chinese, preserves state, and localizes loading, pagination and errors on desktop and mobile");
+    console.log("PASS: Git Graph localizes its states and keeps the search toolbar usable on desktop and mobile");
     await context.tracing.stop();
   } catch (error) {
     releaseInitial();

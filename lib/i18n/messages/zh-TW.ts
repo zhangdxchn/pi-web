@@ -280,8 +280,6 @@ export const zhTWLocale: LocalePlugin = {
     "gitGraph.showRemotes": "顯示遠端分支",
     "gitGraph.search": "搜尋提交（訊息、SHA、作者）…",
     "gitGraph.clearSearch": "清除提交搜尋",
-    "gitGraph.commitCount": "提交：{count}",
-    "gitGraph.commitCountMore": "提交：{count}+",
     "gitGraph.refresh": "重新整理圖譜",
     "gitGraph.graph": "圖譜",
     "gitGraph.description": "描述",

@@ -280,8 +280,6 @@ export const enLocale: LocalePlugin = {
     "gitGraph.showRemotes": "Show remote branches",
     "gitGraph.search": "Search commits (message, SHA, author)…",
     "gitGraph.clearSearch": "Clear commit search",
-    "gitGraph.commitCount": "Commits: {count}",
-    "gitGraph.commitCountMore": "Commits: {count}+",
     "gitGraph.refresh": "Refresh graph",
     "gitGraph.graph": "Graph",
     "gitGraph.description": "Description",

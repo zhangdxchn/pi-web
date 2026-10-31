@@ -380,10 +380,11 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
       {/* 1. Toolbar */}
       <div
         style={{
-          height: 36,
-          padding: "0 8px 0 10px",
+          minHeight: 36,
+          padding: "5px 8px 5px 10px",
           borderBottom: "1px solid var(--border)",
           display: "flex",
+          flexWrap: "wrap",
           alignItems: "center",
           gap: 8,
           background: "var(--bg)",
@@ -541,84 +542,73 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
           </label>
         )}
 
-        {/* Search Input */}
-        <div style={{ position: "relative", flex: 1, maxWidth: 280 }}>
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            style={{
-              position: "absolute",
-              left: 7,
-              top: "50%",
-              transform: "translateY(-50%)",
-              color: "var(--text-dim)",
-              pointerEvents: "none",
-            }}
-          >
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t("gitGraph.search")}
-            aria-label={t("gitGraph.search")}
-            style={{
-              width: "100%",
-              height: 24,
-              padding: "0 22px 0 24px",
-              fontSize: 11,
-              fontFamily: "var(--font-mono)",
-              background: "var(--bg-panel)",
-              border: "1px solid var(--border)",
-              borderRadius: 4,
-              color: "var(--text)",
-              outline: "none",
-            }}
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery("")}
-              title={t("gitGraph.clearSearch")}
-              aria-label={t("gitGraph.clearSearch")}
+        {/* Keep search and refresh together when the toolbar wraps. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "1 1 330px", minWidth: 0 }}>
+          <div style={{ position: "relative", flex: "1 1 0", minWidth: 0, maxWidth: 360 }}>
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
               style={{
                 position: "absolute",
-                right: 4,
+                left: 7,
                 top: "50%",
                 transform: "translateY(-50%)",
-                width: 16,
-                height: 16,
-                background: "none",
-                border: "none",
                 color: "var(--text-dim)",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
+                pointerEvents: "none",
               }}
             >
-              ✕
-            </button>
-          )}
-        </div>
-
-        {/* Counter & Refresh */}
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-          <span
-            style={{
-              fontSize: 11,
-              color: "var(--text-dim)",
-              fontVariantNumeric: "tabular-nums",
-            }}
-          >
-            {t(hasMore ? "gitGraph.commitCountMore" : "gitGraph.commitCount", { count: filteredRows.length })}
-          </span>
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={t("gitGraph.search")}
+              aria-label={t("gitGraph.search")}
+              style={{
+                width: "100%",
+                height: 24,
+                padding: "0 22px 0 24px",
+                fontSize: 11,
+                fontFamily: "var(--font-mono)",
+                background: "var(--bg-panel)",
+                border: "1px solid var(--border)",
+                borderRadius: 4,
+                color: "var(--text)",
+                outline: "none",
+              }}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                title={t("gitGraph.clearSearch")}
+                aria-label={t("gitGraph.clearSearch")}
+                style={{
+                  position: "absolute",
+                  right: 4,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  width: 16,
+                  height: 16,
+                  background: "none",
+                  border: "none",
+                  color: "var(--text-dim)",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
           <button
             type="button"
             onClick={() => void loadInitial()}
@@ -627,6 +617,8 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
             style={{
               width: 24,
               height: 24,
+              flexShrink: 0,
+              marginLeft: "auto",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
