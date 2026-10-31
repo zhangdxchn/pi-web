@@ -12,6 +12,7 @@ import {
   SESSION_UI_STATE_VERSION,
   type SessionUiState,
   type SessionUiStateRequest,
+  type SessionUiSectionRefusal,
 } from "./session-ui-state-shared";
 
 // The sidebar's pins, archive, project order and project names
@@ -23,7 +24,7 @@ import {
 
 const MAX_BYTES = 4 * 1024 * 1024;
 // `__proto__` is never copied: assigning it would set the object's prototype instead.
-const KNOWN_KEYS = new Set(["version", "revision", "sessions", "projects", "projectOrder", "projectNames", "__proto__"]);
+const KNOWN_KEYS = new Set(["version", "revision", "sessions", "projects", "projectOrder", "projectNames", "sections", "projectSections", "__proto__"]);
 
 // Route handlers are bundled separately and hot reload re-evaluates modules; globalThis keeps one queue per process.
 const QUEUE_KEY: symbol = Symbol.for("pi-web:session-ui-state-write-queue");
@@ -48,6 +49,14 @@ export class SessionUiStateLockedError extends Error {
   constructor(message = "Another process holds the session UI state lock") {
     super(message);
     this.name = "SessionUiStateLockedError";
+  }
+}
+
+/** A section operation refused under the state file's lock, before writing. */
+export class SessionUiStateSectionError extends Error {
+  constructor(readonly reason: SessionUiSectionRefusal) {
+    super(reason === "duplicate-section" ? "A section already has that name or id" : reason === "missing-section" ? "Section no longer exists" : "No room for another section or project membership");
+    this.name = "SessionUiStateSectionError";
   }
 }
 
@@ -226,6 +235,8 @@ function editState(
         projects: next.projects,
         ...(next.projectOrder?.length ? { projectOrder: next.projectOrder } : {}),
         ...(next.projectNames && Object.keys(next.projectNames).length > 0 ? { projectNames: next.projectNames } : {}),
+        ...(next.sections?.length ? { sections: next.sections } : {}),
+        ...(next.projectSections && Object.keys(next.projectSections).length > 0 ? { projectSections: next.projectSections } : {}),
         ...extras,
       };
       writePrivateFileAtomicSync(path, JSON.stringify(document, null, 2) + "\n");
@@ -254,7 +265,11 @@ export function updateSessionUiState(request: SessionUiStateRequest, path?: stri
   } catch (error) {
     return Promise.reject(error);
   }
-  return editState(target, (state) => applySessionUiStateRequest(state, request, Date.now()));
+  return editState(target, (state) => {
+    const result = applySessionUiStateRequest(state, request, Date.now());
+    if (result.reason) throw new SessionUiStateSectionError(result.reason);
+    return result;
+  });
 }
 
 /** Removes those session entries; no-op (no write) if none present. */

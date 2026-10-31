@@ -14,7 +14,9 @@ loopback port. Run it in a checkout without an active dev server; Next.js
 shares `.next/dev/lock` within a checkout. All fixtures are created before
 startup in a temporary `PI_CODING_AGENT_DIR` and removed on completion.
 No model credentials or existing Pi sessions are needed. Git is required for
-the linked-worktree fixture.
+the linked-worktree fixture. `node e2e/project-sections.mjs` runs the focused
+Section acceptance separately, with its own temporary session directory and
+server; it likewise needs a checkout without an active dev server.
 
 CI runs lint, type checking, and unit tests in one job. A separate job builds
 the application in a clean checkout and runs the same browser tests with
@@ -38,6 +40,7 @@ Coverage:
 - On a desktop the sidebar shows the files below the sessions; Settings ›
   General › File browser brings back the Sessions | Files tabs and returns,
   without remounting the file tree (its file search keeps its query).
+- Project Sections (`project-sections.mjs`, run separately): desktop creation, rename, ordering, menu moves, pointer drag, fold persistence and reload; mobile Chromium long-press drag, menu moves and deletion; pinned membership, cross-browser state, three languages and unchanged session files. With the unread section, it also checks precedence, folded summaries, keyboard focus and locating a retained read row into a folded Section on desktop and mobile. Native devices still need real-device verification.
 - Unknown sessions and paths outside the fixture project are rejected.
 - The unread section (`session-unread.mjs`, desktop and mobile) takes pinned and project sessions without duplicates; a simulated background run's completion enters it. Reading syncs across tabs while the selected read row stays until a switch, reload, archive or explicit locate. Locate unfolds the pinned section or project and preserves keyboard focus; the tests also cover the zero count, archive Undo, a 180px sidebar and the saved fold.
 - Sidebar sessions open in browser tabs (`session-navigation.mjs`, desktop

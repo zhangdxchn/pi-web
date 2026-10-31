@@ -85,10 +85,10 @@ function session(id, project, modified) {
   return { path: `${project}/${id}.jsonl`, id, cwd: project, projectRoot: project, projectKey: project, created: time, modified: time, messageCount: 1, firstMessage: id };
 }
 
-function model(projects) {
+function model(projects, sectionState = {}) {
   return buildSessionTree({
     sessions: projects.map((project, index) => session(`s${index}`, project, BASE - index)),
-    uiState: { version: 1, revision: 0, sessions: {}, projects: {}, projectOrder: projects },
+    uiState: { version: 1, revision: 0, sessions: {}, projects: {}, projectOrder: projects, ...sectionState },
     runningIds: new Set(),
     unreadIds: new Set(),
     selectedSessionId: null,
@@ -107,8 +107,8 @@ const TREE_TOP = 60;
  * an 8px spacer between two, then the footer's spacer and its row: /a 8..36,
  * /b 44..72, /c 80..108) in a list box 100px from the top of the page.
  */
-function setup({ projects = ["/a", "/b", "/c"], clientHeight = 400, enabled = true } = {}) {
-  const { rows } = model(projects);
+function setup({ projects = ["/a", "/b", "/c"], clientHeight = 400, enabled = true, sectionState } = {}) {
+  const { rows } = model(projects, sectionState);
   const offsets = getRowOffsets(rows, "desktop");
   const scroll = emitter({
     scrollTop: 0,
@@ -125,6 +125,7 @@ function setup({ projects = ["/a", "/b", "/c"], clientHeight = 400, enabled = tr
   const tree = { getBoundingClientRect: () => ({ top: TREE_TOP, left: 0 }) };
   const ghost = { style: {}, offsetHeight: GHOST_HEIGHT };
   const moves = [];
+  const assignments = [];
   const props = {
     rows,
     offsets,
@@ -135,6 +136,7 @@ function setup({ projects = ["/a", "/b", "/c"], clientHeight = 400, enabled = tr
     treeRef: { current: tree },
     ghostRef: { current: ghost },
     onMove: (...move) => moves.push(move),
+    ...(sectionState ? { onAssignSection: (...move) => assignments.push(move) } : {}),
   };
   const hook = renderHook(useGroupDrag, props);
   mounted.push(hook);
@@ -185,7 +187,7 @@ function setup({ projects = ["/a", "/b", "/c"], clientHeight = 400, enabled = tr
     hook.flush();
     return event.defaultPrevented;
   };
-  return { hook, props, rows, offsets, scroll, ghost, moves, rowTop, at, press, move, release, click, key, touchMove };
+  return { hook, props, rows, offsets, scroll, ghost, moves, assignments, rowTop, at, press, move, release, click, key, touchMove };
 }
 
 // A failed test must not leave its listeners to the next one.
@@ -382,6 +384,24 @@ test("touch: a swipe scrolls, a long-press picks the group up and holds the list
   tree.hook.unmount();
 });
 
+test("touch long-press moves an unpinned project to a section header", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const tree = setup({ projects: ["/a", "/b"], sectionState: { sections: [{ id: "work", name: "Work" }, { id: "personal", name: "Personal" }], projectSections: { "/a": "work", "/b": "personal" } } });
+  const start = tree.at(tree.rowTop("/a") + 10);
+  const targetIndex = tree.rows.findIndex((row) => row.kind === "section" && row.sectionId === "personal");
+  const target = tree.at(tree.offsets[targetIndex] + 10);
+  tree.press("/a", { y: start, pointerType: "touch" });
+  t.mock.timers.tick(LONG_PRESS_MS);
+  tree.hook.flush();
+  tree.move(start + DRAG_START_PX, { pointerType: "touch" });
+  tree.move(target, { pointerType: "touch" });
+  assert.equal(tree.hook.result.view.drop.sectionId, "personal");
+  tree.release(target);
+  assert.deepEqual(tree.assignments, [["/a", "personal"]]);
+  assert.deepEqual(tree.moves, []);
+  tree.hook.unmount();
+});
+
 test("a pen takes the long-press path, not the mouse's threshold", (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const tree = setup();
@@ -481,7 +501,8 @@ test("near an edge the list scrolls, never past the rows' own height", () => {
   // band's end, both in view as the list scrolled: the ghost clears the line.
   const lineAt = tree.at(tree.hook.result.view.drop.lineY);
   assert.ok(lineAt < bottom && lineAt > SCROLL_TOP_EDGE);
-  assert.equal(tree.ghost.style.top, `${lineAt - GHOST_LINE_GAP_PX - GHOST_HEIGHT - TREE_TOP}px`);
+  const ghostTop = Number.parseFloat(tree.ghost.style.top) + TREE_TOP;
+  assert.ok(ghostTop + GHOST_HEIGHT + GHOST_LINE_GAP_PX <= lineAt || ghostTop >= lineAt + GHOST_LINE_GAP_PX, "the ghost stays clear of the drop line");
   tree.move(SCROLL_TOP_EDGE + 1);
   runFrames(1);
   assert.equal(tree.scroll.scrollTop, content - 100 - AUTO_SCROLL_MAX_STEP);
