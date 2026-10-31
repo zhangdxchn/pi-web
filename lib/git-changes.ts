@@ -59,35 +59,56 @@ async function readStatusEntries(
   return parseGitPorcelainV1(output);
 }
 
+interface LineStats {
+  additions: number;
+  deletions: number;
+}
+
 async function readTrackedLineStats(
   repositoryRoot: string,
   cwd: string,
-): Promise<{ additions: number; deletions: number }> {
+): Promise<LineStats & { byPath: Map<string, LineStats> }> {
   const relativeCwd = toGitPath(path.relative(repositoryRoot, cwd));
   const pathspec = relativeCwd || ".";
+  const byPath = new Map<string, LineStats>();
   try {
     const output = await git(repositoryRoot, [
       "diff",
       "--no-color",
       "--no-ext-diff",
       "--numstat",
+      "-z",
       "HEAD",
       "--",
       pathspec,
     ]);
     let additions = 0;
     let deletions = 0;
-    for (const line of output.split(/\r?\n/)) {
-      if (!line) continue;
-      const [added, deleted] = line.split("\t", 2);
-      const addedCount = Number(added);
-      const deletedCount = Number(deleted);
-      if (Number.isInteger(addedCount)) additions += addedCount;
-      if (Number.isInteger(deletedCount)) deletions += deletedCount;
+    const records = output.split("\0");
+    for (let i = 0; i < records.length;) {
+      const record = records[i++];
+      const firstTab = record.indexOf("\t");
+      const secondTab = record.indexOf("\t", firstTab + 1);
+      if (firstTab < 0 || secondTab < 0) continue;
+      const added = Number(record.slice(0, firstTab));
+      const deleted = Number(record.slice(firstTab + 1, secondTab));
+      let filePath = record.slice(secondTab + 1);
+      if (!filePath) {
+        i++; // old path of a rename
+        filePath = records[i++];
+      }
+      if (!filePath) continue;
+      const stats = {
+        additions: Number.isInteger(added) ? added : 0,
+        deletions: Number.isInteger(deleted) ? deleted : 0,
+      };
+      byPath.set(filePath, stats);
+      additions += stats.additions;
+      deletions += stats.deletions;
     }
-    return { additions, deletions };
+    return { additions, deletions, byPath };
   } catch {
-    return { additions: 0, deletions: 0 };
+    return { additions: 0, deletions: 0, byPath };
   }
 }
 
@@ -130,15 +151,26 @@ export async function getGitStatus(cwd: string): Promise<GitStatusResponse> {
     if (!isWithinPath(realCwd, realFilePath)) return [];
     const filePath = path.join(cwd, path.relative(realCwd, realFilePath));
     const classified = classifyGitStatus(entry);
+    const tracked = trackedLineStats.byPath.get(entry.path);
+    // Git may report a staged rename as separate delete/add records after a large rewrite.
+    const previous = entry.originalPath && (entry.indexStatus === "R" || entry.worktreeStatus === "R")
+      ? trackedLineStats.byPath.get(entry.originalPath) : undefined;
+    const stats = classified.status === "untracked"
+      ? { additions: countUntrackedTextLines(filePath), deletions: 0 }
+      : {
+        additions: (tracked?.additions ?? 0) + (previous?.additions ?? 0),
+        deletions: (tracked?.deletions ?? 0) + (previous?.deletions ?? 0),
+      };
     return [{
       filePath,
       ...classified,
       indexStatus: entry.indexStatus,
       worktreeStatus: entry.worktreeStatus,
+      ...stats,
     }];
   });
   const untrackedAdditions = files.reduce(
-    (total, file) => total + (file.status === "untracked" ? countUntrackedTextLines(file.filePath) : 0),
+    (total, file) => total + (file.status === "untracked" ? file.additions : 0),
     0,
   );
 

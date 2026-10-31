@@ -15,11 +15,14 @@ import {
   GRAPH_LANE_WIDTH,
   GRAPH_PALETTE,
   GRAPH_ROW_HEIGHT,
+  withWorkingTreeNode,
+  WORKING_TREE_NODE_ID,
 } from "@/lib/git-graph-model";
 import { GitGraphRowSvg } from "./GitGraphRowSvg";
 import { GitGraphDetails } from "./GitGraphDetails";
 import { GitGraphActions, type GitGraphActionTarget } from "./GitGraphActions";
 import { useGitGraphColumns } from "./useGitGraphColumns";
+import { useGitWorkingChanges } from "./useGitWorkingChanges";
 import styles from "./GitGraphView.module.css";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/hooks/useI18n";
@@ -27,6 +30,9 @@ import { useI18n } from "@/hooks/useI18n";
 interface GitGraphViewProps {
   cwd: string;
   onOpenFileDiff?: (filePath: string, sha: string) => void;
+  onOpenWorkingFile?: (filePath: string) => void;
+  active?: boolean;
+  refreshKey?: number;
   onGitChanged?: () => void;
   onOpenTerminal?: (cwd: string) => void;
 }
@@ -35,8 +41,9 @@ const STORAGE_DETAILS_HEIGHT = "pi-web:git-graph-details-height";
 const STORAGE_SHOW_REMOTES = "pi-web:git-graph-show-remotes";
 const OVERSCAN = 20;
 
-export function GitGraphView({ cwd, onOpenFileDiff, onGitChanged, onOpenTerminal }: GitGraphViewProps) {
+export function GitGraphView({ cwd, onOpenFileDiff, onOpenWorkingFile, active = true, refreshKey = 0, onGitChanged, onOpenTerminal }: GitGraphViewProps) {
   const { t } = useI18n();
+  const { snapshot: workingChanges, error: workingChangesError, refresh: refreshWorkingChanges } = useGitWorkingChanges(cwd, active, refreshKey);
   const isMobile = useIsMobile();
   const pageSize = isMobile ? 200 : 500;
 
@@ -127,6 +134,7 @@ export function GitGraphView({ cwd, onOpenFileDiff, onGitChanged, onOpenTerminal
 
       setSelectedSha((cur) => {
         if (!cur) return null;
+        if (cur === WORKING_TREE_NODE_ID) return cur;
         return resData.commits.some((c) => c.sha === cur) ? cur : null;
       });
     } catch (e) {
@@ -198,11 +206,19 @@ export function GitGraphView({ cwd, onOpenFileDiff, onGitChanged, onOpenTerminal
     }
   }, [cwd, branchFilter, showRemotes, pageSize]);
 
-  // Compute topological graph rows
+  // The synthetic row participates in graph layout, but never in Git pagination.
   const allRows = useMemo(() => {
-    if (commits.length === 0) return [];
-    return computeGraphRows(commits);
-  }, [commits]);
+    const count = workingChanges?.files.length ?? 0;
+    const graphCommits = withWorkingTreeNode(commits, headSha, count,
+      t("gitGraph.uncommittedChanges", { count }), workingChanges?.timestamp ?? "");
+    return computeGraphRows(graphCommits);
+  }, [commits, headSha, workingChanges, t]);
+
+  useEffect(() => {
+    if (workingChanges && !allRows.some((row) => row.commit.sha === WORKING_TREE_NODE_ID)) {
+      setSelectedSha((current) => current === WORKING_TREE_NODE_ID ? null : current);
+    }
+  }, [allRows, workingChanges]);
 
   // Compute maximum lane used across all computed rows to guarantee no overlap with description
   const maxLanes = useMemo(() => {
@@ -255,6 +271,8 @@ export function GitGraphView({ cwd, onOpenFileDiff, onGitChanged, onOpenTerminal
     const el = scrollContainerRef.current;
     if (!el) return;
     const measure = () => {
+      // An error screen unmounts the scrollport; its replacement starts at zero.
+      setScrollTop(el.scrollTop);
       setClientHeight(el.clientHeight);
       setClientWidth(el.clientWidth);
     };
@@ -262,7 +280,7 @@ export function GitGraphView({ cwd, onOpenFileDiff, onGitChanged, onOpenTerminal
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [loading, commits.length]);
+  }, [loading, commits.length, isGitRepo, error]);
 
   // Compute virtual slice
   const startIndex = Math.max(0, Math.floor(scrollTop / GRAPH_ROW_HEIGHT) - OVERSCAN);
@@ -277,6 +295,13 @@ export function GitGraphView({ cwd, onOpenFileDiff, onGitChanged, onOpenTerminal
     if (!selectedSha) return null;
     return commits.find((c) => c.sha === selectedSha) ?? null;
   }, [commits, selectedSha]);
+
+  const selectedWorkingTree = selectedSha === WORKING_TREE_NODE_ID && workingChanges !== null;
+  const handleDetailsHeightChange = (height: number) => {
+    setDetailsHeight(height);
+    try { localStorage.setItem(STORAGE_DETAILS_HEIGHT, String(height)); } catch {}
+  };
+  const refreshGraph = () => { void loadInitial(); refreshWorkingChanges(); };
 
   const handleSelectSha = (sha: string) => {
     setSelectedSha((cur) => (cur === sha ? null : sha));
@@ -352,7 +377,7 @@ export function GitGraphView({ cwd, onOpenFileDiff, onGitChanged, onOpenTerminal
         </span>
         <button
           type="button"
-          onClick={() => void loadInitial()}
+          onClick={refreshGraph}
           style={{
             padding: "4px 10px",
             background: "var(--bg-panel)",
@@ -615,7 +640,7 @@ export function GitGraphView({ cwd, onOpenFileDiff, onGitChanged, onOpenTerminal
           </div>
           <button
             type="button"
-            onClick={() => void loadInitial()}
+            onClick={refreshGraph}
             title={t("gitGraph.refresh")}
             aria-label={t("gitGraph.refresh")}
             style={{
@@ -701,24 +726,29 @@ export function GitGraphView({ cwd, onOpenFileDiff, onGitChanged, onOpenTerminal
         {visibleRows.map((row) => {
           const c = row.commit;
           const isSelected = c.sha === selectedSha;
+          const isWorkingTree = c.sha === WORKING_TREE_NODE_ID;
           const curveColor = GRAPH_PALETTE[row.colorIndex] ?? "var(--accent)";
 
           return (
             <div
               key={c.sha}
-              data-testid="git-graph-row"
+              data-testid={isWorkingTree ? "git-graph-uncommitted" : "git-graph-row"}
+              role={isWorkingTree ? "button" : undefined}
+              aria-label={isWorkingTree ? c.subject : undefined}
+              aria-expanded={isWorkingTree ? isSelected : undefined}
               onClick={() => handleSelectSha(c.sha)}
               className={styles.row}
               tabIndex={0}
               onKeyDown={(event) => {
                 if (event.target !== event.currentTarget) return;
                 if (event.key === "Enter" || event.key === " ") { event.preventDefault(); handleSelectSha(c.sha); }
-                if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+                if (!isWorkingTree && (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))) {
                   event.preventDefault();
                   setActionTarget({ commit: c, anchor: { kind: "rect", rect: event.currentTarget.getBoundingClientRect(), align: "start" }, opener: event.currentTarget });
                 }
               }}
               onContextMenu={(event) => {
+                if (isWorkingTree) return;
                 event.preventDefault();
                 setActionTarget({ commit: c, anchor: { kind: "point", x: event.clientX, y: event.clientY }, opener: event.currentTarget });
               }}
@@ -755,6 +785,7 @@ export function GitGraphView({ cwd, onOpenFileDiff, onGitChanged, onOpenTerminal
                 <GitGraphRowSvg
                   row={row}
                   isSelected={isSelected}
+                  isWorkingTree={isWorkingTree}
                   width={effectiveGraphWidth}
                 />
               </div>
@@ -778,6 +809,7 @@ export function GitGraphView({ cwd, onOpenFileDiff, onGitChanged, onOpenTerminal
                   title={c.subject}
                   style={{
                     color: "var(--text)",
+                    fontWeight: isWorkingTree ? 600 : undefined,
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
@@ -786,14 +818,14 @@ export function GitGraphView({ cwd, onOpenFileDiff, onGitChanged, onOpenTerminal
                 >
                   {c.subject}
                 </span>
-                <button type="button" className={styles.rowActions} aria-label={t("gitGraph.action.commitMenu", { sha: c.shortSha })}
-                  onClick={(event) => { event.stopPropagation(); setActionTarget({ commit: c, anchor: { kind: "rect", rect: event.currentTarget.getBoundingClientRect(), align: "end" }, opener: event.currentTarget }); }}>⋯</button>
+                {!isWorkingTree && <button type="button" className={styles.rowActions} aria-label={t("gitGraph.action.commitMenu", { sha: c.shortSha })}
+                  onClick={(event) => { event.stopPropagation(); setActionTarget({ commit: c, anchor: { kind: "rect", rect: event.currentTarget.getBoundingClientRect(), align: "end" }, opener: event.currentTarget }); }}>⋯</button>}
               </div>
 
               {/* Author Cell (Desktop only) */}
               {!isMobile && (
                 <div
-                  title={`${c.author} (${c.authorEmail})`}
+                  title={isWorkingTree ? undefined : `${c.author} (${c.authorEmail})`}
                   style={{
                     width: columns.author,
                     flexShrink: 0,
@@ -812,7 +844,7 @@ export function GitGraphView({ cwd, onOpenFileDiff, onGitChanged, onOpenTerminal
               {/* Date Cell (Desktop only) */}
               {!isMobile && (
                 <div
-                  title={c.committedAt}
+                  title={isWorkingTree ? t("gitGraph.uncommittedStatusTime") : c.committedAt}
                   style={{
                     width: columns.date,
                     flexShrink: 0,
@@ -921,6 +953,7 @@ export function GitGraphView({ cwd, onOpenFileDiff, onGitChanged, onOpenTerminal
         )}
       </div>
 
+      {workingChangesError && <div role="status" style={{ padding: "4px 10px", color: "var(--text-muted)", fontSize: 11, borderTop: "1px solid var(--border)" }}>{t("gitGraph.uncommittedStatusFailed")}</div>}
       {actionNotice && <div role="status" style={{ padding: "4px 10px", color: "var(--text-muted)", fontSize: 11, borderTop: "1px solid var(--border)" }}>{actionNotice}</div>}
       {actionTarget && <GitGraphActions cwd={cwd} target={actionTarget} currentBranch={currentBranch} headSha={headSha} remotes={remotes} mobile={isMobile}
         onClose={() => setActionTarget(null)} onNotice={setActionNotice} onOpenTerminal={onOpenTerminal}
@@ -931,23 +964,16 @@ export function GitGraphView({ cwd, onOpenFileDiff, onGitChanged, onOpenTerminal
           onGitChanged?.();
         }} />}
 
-      {/* 4. Bottom Commit Details Drawer */}
-      {selectedCommit && (
-        <GitGraphDetails
-          cwd={cwd}
-          commit={selectedCommit}
-          height={detailsHeight}
-          onHeightChange={(h) => {
-            setDetailsHeight(h);
-            try {
-              localStorage.setItem(STORAGE_DETAILS_HEIGHT, String(h));
-            } catch {}
-          }}
-          onClose={() => setSelectedSha(null)}
-          onSelectSha={handleSelectSha}
-          onOpenFileDiff={onOpenFileDiff}
-        />
-      )}
+      {/* 4. Bottom Commit / Working Changes Details Drawer */}
+      {selectedCommit ? (
+        <GitGraphDetails kind="commit" cwd={cwd} commit={selectedCommit} height={detailsHeight}
+          onHeightChange={handleDetailsHeightChange} onClose={() => setSelectedSha(null)}
+          onSelectSha={handleSelectSha} onOpenFileDiff={onOpenFileDiff} />
+      ) : selectedWorkingTree && workingChanges ? (
+        <GitGraphDetails kind="working" cwd={cwd} files={workingChanges.files} height={detailsHeight}
+          onHeightChange={handleDetailsHeightChange} onClose={() => setSelectedSha(null)}
+          onOpenWorkingFile={onOpenWorkingFile} />
+      ) : null}
     </div>
   );
 }

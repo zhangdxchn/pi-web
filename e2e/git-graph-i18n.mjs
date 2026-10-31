@@ -161,6 +161,13 @@ export async function checkGitGraphI18n({ browser, base, artifacts, fixture }) {
     await panel.getByTitle(`前往父提交 ${rootSha}`).click();
     await panel.getByText("（根提交 · 無父提交）", { exact: true }).waitFor();
     await panel.getByText("此提交沒有檔案變更", { exact: true }).waitFor();
+    // The error screen unmounts the virtual scrollport. Its replacement starts at
+    // zero, so its rendered slice must not retain the previous scroll position.
+    const scrollTop = await panel.getByTestId("git-graph-body").evaluate((element) => new Promise((resolve) => {
+      element.scrollTop = element.scrollHeight;
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve(element.scrollTop)));
+    }));
+    assert.ok(scrollTop > 560, "the virtualizer has scrolled beyond its overscan");
 
     mode = "not-repo";
     await panel.getByRole("button", { name: "重新整理圖譜", exact: true }).click();

@@ -1,41 +1,49 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { GitCommitDetail, GitGraphCommit } from "@/lib/git-types";
+import type { GitCommitDetail, GitFileStatus, GitGraphCommit } from "@/lib/git-types";
+import { getFileName, getRelativeFilePath } from "@/lib/file-paths";
 import { formatCommitDate } from "@/lib/git-graph-model";
 import { getFileIcon } from "../FileIcons";
 import { useI18n } from "@/hooks/useI18n";
 
-interface GitGraphDetailsProps {
+interface GitGraphDetailsCommonProps {
   cwd: string;
-  commit: GitGraphCommit;
   height: number;
   onHeightChange: (h: number) => void;
   onClose: () => void;
-  onSelectSha?: (sha: string) => void;
-  onOpenFileDiff?: (filePath: string, sha: string) => void;
 }
 
-export function GitGraphDetails({
-  cwd,
-  commit,
-  height,
-  onHeightChange,
-  onClose,
-  onSelectSha,
-  onOpenFileDiff,
-}: GitGraphDetailsProps) {
+type GitGraphDetailsProps = GitGraphDetailsCommonProps & (
+  | { kind: "commit"; commit: GitGraphCommit; onSelectSha?: (sha: string) => void; onOpenFileDiff?: (filePath: string, sha: string) => void }
+  | { kind: "working"; files: GitFileStatus[]; onOpenWorkingFile?: (filePath: string) => void }
+);
+
+function LineStats({ additions, deletions }: { additions: number; deletions: number }) {
+  return (
+    <span style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, display: "flex", gap: 4, flexShrink: 0 }}>
+      {additions > 0 && <span style={{ color: "#22c55e" }}>+{additions}</span>}
+      {deletions > 0 && <span style={{ color: "#ef4444" }}>-{deletions}</span>}
+    </span>
+  );
+}
+
+export function GitGraphDetails(props: GitGraphDetailsProps) {
+  const { cwd, height, onHeightChange, onClose } = props;
+  const commit = props.kind === "commit" ? props.commit : null;
+  const commitSha = commit?.sha;
   const { t } = useI18n();
   const [detail, setDetail] = useState<GitCommitDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [copiedSha, setCopiedSha] = useState(false);
 
   useEffect(() => {
+    if (!commitSha) return;
     let active = true;
     setLoading(true);
     setDetail(null);
 
-    const params = new URLSearchParams({ cwd, sha: commit.sha });
+    const params = new URLSearchParams({ cwd, sha: commitSha });
     fetch(`/api/git/graph?${params.toString()}`)
       .then((res) => {
         if (!res.ok) throw new Error("Failed to load commit detail");
@@ -57,9 +65,10 @@ export function GitGraphDetails({
     return () => {
       active = false;
     };
-  }, [cwd, commit.sha]);
+  }, [cwd, commitSha]);
 
   const handleCopySha = () => {
+    if (!commit) return;
     void navigator.clipboard.writeText(commit.sha);
     setCopiedSha(true);
     setTimeout(() => setCopiedSha(false), 1500);
@@ -127,9 +136,9 @@ export function GitGraphDetails({
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
-              {commit.subject}
+              {commit ? commit.subject : t("gitGraph.uncommittedChanges", { count: props.kind === "working" ? props.files.length : 0 })}
             </span>
-            <button
+            {commit && <button
               type="button"
               onClick={handleCopySha}
               title={commit.sha}
@@ -145,10 +154,10 @@ export function GitGraphDetails({
               }}
             >
               {copiedSha ? `${t("i18n.copied")} ✓` : commit.shortSha}
-            </button>
+            </button>}
           </div>
 
-          <div
+          {commit && <div
             style={{
               display: "flex",
               alignItems: "center",
@@ -175,7 +184,7 @@ export function GitGraphDetails({
                     <button
                       key={p}
                       type="button"
-                      onClick={() => onSelectSha?.(p)}
+                      onClick={() => { if (props.kind === "commit") props.onSelectSha?.(p); }}
                       title={t("gitGraph.goToParent", { sha: p })}
                       style={{
                         fontFamily: "var(--font-mono)",
@@ -200,7 +209,7 @@ export function GitGraphDetails({
                 <span>{t("gitGraph.parents")} <span style={{ color: "var(--text-dim)", fontStyle: "italic" }}>{t("gitGraph.rootCommit")}</span></span>
               </>
             )}
-          </div>
+          </div>}
         </div>
 
         <button
@@ -224,7 +233,26 @@ export function GitGraphDetails({
 
       {/* Content Area */}
       <div style={{ flex: 1, overflowY: "auto", padding: "6px 12px" }}>
-        {loading ? (
+        {props.kind === "working" ? (
+          <div data-testid="git-graph-working-details">
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
+              {t("gitGraph.changedFiles", { count: props.files.length })}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              {props.files.map((file) => (
+                <button key={file.filePath} type="button" onClick={() => props.onOpenWorkingFile?.(file.filePath)}
+                  title={file.filePath}
+                  style={{ display: "flex", alignItems: "center", gap: 7, width: "100%", padding: "4px 8px", borderRadius: 4, background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: 11.5, cursor: "pointer", textAlign: "left" }}>
+                  <span title={t(`files.${file.status}`)} aria-label={t(`files.${file.status}`)} style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", width: 14, flexShrink: 0 }}>{file.code}</span>
+                  <span style={{ display: "flex", flexShrink: 0, opacity: 0.85 }}>{getFileIcon(getFileName(file.filePath), 13)}</span>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{getRelativeFilePath(file.filePath, cwd)}</span>
+                  <LineStats additions={file.additions} deletions={file.deletions} />
+                  <span style={{ fontSize: 10, color: "var(--accent)", flexShrink: 0 }}>{t("gitGraph.viewDiff")} ↗</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : loading ? (
           <div style={{ padding: "12px 0", fontSize: 11, color: "var(--text-dim)" }}>
             {t("gitGraph.loadingChanges")}
           </div>
@@ -243,7 +271,7 @@ export function GitGraphDetails({
                 return (
                   <div
                     key={file.filePath}
-                    onClick={() => onOpenFileDiff?.(file.filePath, commit.sha)}
+                    onClick={() => { if (props.kind === "commit") props.onOpenFileDiff?.(file.filePath, props.commit.sha); }}
                     style={{
                       display: "flex",
                       alignItems: "center",
@@ -281,21 +309,7 @@ export function GitGraphDetails({
                     </div>
 
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                      <div
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 10.5,
-                          display: "flex",
-                          gap: 4,
-                        }}
-                      >
-                        {file.additions > 0 && (
-                          <span style={{ color: "#22c55e" }}>+{file.additions}</span>
-                        )}
-                        {file.deletions > 0 && (
-                          <span style={{ color: "#ef4444" }}>-{file.deletions}</span>
-                        )}
-                      </div>
+                      <LineStats additions={file.additions} deletions={file.deletions} />
                       <span style={{ fontSize: 10, color: "var(--accent)" }}>
                         {t("gitGraph.viewDiff")} ↗
                       </span>

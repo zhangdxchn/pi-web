@@ -66,7 +66,9 @@ Coverage:
   narrow-panel horizontal scrolling, and header and virtual-row alignment.
   A separate temporary repository and local bare remote exercise the commit,
   branch and tag menus, rename, normal push, and hard-reset confirmation on
-  desktop and mobile. No existing repository or remote is changed.
+  desktop and mobile. Working-tree fixtures check the uncommitted node's count,
+  per-file additions and deletions, file diffs, branch filtering and refresh.
+  No existing repository or remote is changed.
 - The model picker, with a synthetic catalog: on a phone, a simulated keyboard
   (visual viewport shrink, pan, a late height with no event) keeps the same
   filter focused and the list in the visible viewport. Native phone keyboards

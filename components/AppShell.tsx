@@ -2883,6 +2883,8 @@ export function AppShell() {
           {gitGraphOpen && activeCwd && (
             <div hidden={activeFileTabId !== "git-graph"} style={{ height: "100%" }}>
               <GitGraphView cwd={activeCwd} onOpenFileDiff={handleOpenCommitDiff} onOpenTerminal={handleOpenTerminal}
+                onOpenWorkingFile={(filePath) => handleOpenFile(filePath, getFileName(filePath), { modeHint: "diff" })}
+                active={rightPanelOpen && activeFileTabId === "git-graph"} refreshKey={explorerRefreshKey}
                 onGitChanged={() => { handleExplorerRefresh(); sidebarControlRef.current?.refreshWorktrees(); }} />
             </div>
           )}

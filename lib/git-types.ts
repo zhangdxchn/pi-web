@@ -12,6 +12,8 @@ export interface GitFileStatus {
   code: "M" | "A" | "D" | "R" | "U" | "C";
   indexStatus: string;
   worktreeStatus: string;
+  additions: number;
+  deletions: number;
 }
 
 export interface GitStatusResponse {
