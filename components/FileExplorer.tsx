@@ -3,6 +3,10 @@
 import { forwardRef, useState, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from "react";
 import { getFileIcon, FolderIcon } from "./FileIcons";
 import { DismissButton } from "./DismissButton";
+import { ChangedFilesFolder } from "./ChangedFilesFolder";
+import { ChangedFilesViewSwitch } from "./ChangedFilesViewSwitch";
+import { buildChangedFilesTree, visibleChangedFileRows } from "@/lib/changed-files-tree";
+import { useChangedFilesLayout } from "@/hooks/useChangedFilesLayout";
 import {
   encodeFilePathForApi,
   getFileDirectory,
@@ -617,88 +621,61 @@ function ChangeRow({
   onOpenFile,
   onAtMention,
   t,
+  depth,
 }: {
   status: GitFileStatus;
   cwd: string;
   onOpenFile: OpenFileHandler;
   onAtMention?: (relativePath: string, isDir: boolean) => void;
   t: Translate;
+  depth?: number;
 }) {
   const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
   const name = getFileName(status.filePath);
   const rel = getRelativeFilePath(status.filePath, cwd);
   // Split the path so the directory part ellipsizes while the file name stays fully visible
   const lastSlash = rel.lastIndexOf("/");
-  const dirPart = lastSlash >= 0 ? rel.slice(0, lastSlash + 1) : "";
+  const dirPart = depth === undefined && lastSlash >= 0 ? rel.slice(0, lastSlash + 1) : "";
   const baseName = lastSlash >= 0 ? rel.slice(lastSlash + 1) : rel;
   return (
-    <div
-      onClick={() => onOpenFile(status.filePath, name, { modeHint: "diff" })}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      title={status.filePath}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 6,
-        paddingLeft: 10,
-        paddingRight: 8,
-        height: 24,
-        cursor: "pointer",
-        background: hovered ? "var(--bg-hover)" : "transparent",
-        borderRadius: 4,
-        userSelect: "none",
-        position: "relative",
-      }}
-    >
-      <GitStatusBadge status={status} t={t} />
-      <span style={{ flexShrink: 0, display: "flex", alignItems: "center", opacity: 0.85 }}>
-        {getFileIcon(name, 13)}
-      </span>
-      <span
-        title={status.filePath}
+    <div onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false); }}
+      style={{ position: "relative" }}>
+      <button type="button" onClick={() => onOpenFile(status.filePath, name, { modeHint: "diff" })} title={status.filePath}
         style={{
-          fontSize: 12,
-          color: "var(--text)",
-          display: "flex",
-          alignItems: "center",
-          minWidth: 0,
-          flex: 1,
-        }}
-      >
-        {dirPart && (
-          <span
-            style={{
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              flex: "0 1 auto",
-              minWidth: 0,
-              color: "var(--text-dim)",
-            }}
-          >
-            {dirPart}
-          </span>
-        )}
-        <span
-          style={{
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            flexShrink: 0,
-            maxWidth: "100%",
-          }}
-        >
-          {baseName}
+          display: "flex", alignItems: "center", gap: 6, width: "100%",
+          paddingLeft: depth === undefined ? 10 : 22 + depth * 14, paddingRight: 8, height: 24,
+          border: 0, cursor: "pointer", background: hovered ? "var(--bg-hover)" : "transparent",
+          borderRadius: 4, color: "var(--text)", textAlign: "left", userSelect: "none",
+        }}>
+        {depth === undefined && <GitStatusBadge status={status} t={t} />}
+        <span style={{ flexShrink: 0, display: "flex", alignItems: "center", opacity: 0.85 }}>
+          {getFileIcon(name, 13)}
         </span>
-      </span>
-      {onAtMention && hovered && (
+        <span
+          title={status.filePath}
+          style={{ fontSize: 12, color: "var(--text)", display: "flex", alignItems: "center", minWidth: 0, flex: 1 }}
+        >
+          {dirPart && (
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: "0 1 auto", minWidth: 0, color: "var(--text-dim)" }}>
+              {dirPart}
+            </span>
+          )}
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flexShrink: 0, maxWidth: "100%" }}>
+            {baseName}
+          </span>
+        </span>
+        {depth !== undefined && <GitStatusBadge status={status} t={t} />}
+      </button>
+      {onAtMention && (hovered || focused) && (
         <button
           onClick={(e) => {
             e.stopPropagation();
             onAtMention(rel, false);
           }}
           title={t("files.insertPath")}
+          aria-label={t("files.insertPath")}
           style={{
             position: "absolute",
             right: 4,
@@ -750,6 +727,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   const [highlightedPaths, setHighlightedPaths] = useState<Set<string>>(new Set());
   const [gitFiles, setGitFiles] = useState<GitFileStatus[]>([]);
   const [gitLineStats, setGitLineStats] = useState({ additions: 0, deletions: 0 });
+  const [changesLayout, setChangesLayout] = useChangedFilesLayout("sidebar");
+  const [changesFolders, setChangesFolders] = useState<Map<string, boolean>>(() => new Map());
   const [uploadPhase, setUploadPhase] = useState<UploadPhase>("idle");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -838,6 +817,13 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     });
     return buildSearchTree(searchPaths).map(toFileNode);
   }, [cwd, searchPaths]);
+
+  useEffect(() => { setChangesFolders(new Map()); }, [cwd]);
+
+  const changesTree = useMemo(() => !changesCollapsed && changesLayout === "tree"
+    ? buildChangedFilesTree(gitFiles, (file) => getRelativeFilePath(file.filePath, cwd))
+    : null, [changesCollapsed, changesLayout, cwd, gitFiles]);
+  const changeRows = useMemo(() => changesTree ? visibleChangedFileRows(changesTree, changesFolders) : [], [changesTree, changesFolders]);
 
   const gitStatusByPath = useMemo(() => new Map(
     gitFiles.map((status) => [normalizeFilePathSlashes(status.filePath), status]),
@@ -1311,29 +1297,25 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
 
       {!changesCollapsed && gitFiles.length > 0 && (
         <div style={{ padding: "0 4px 2px" }}>
-          <div
-            aria-label={t("files.changeStats", {
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "2px 6px", minHeight: 24, padding: "0 8px", fontSize: 12 }}>
+            <div aria-label={t("files.changeStats", {
               count: gitFiles.length,
               additions: gitLineStats.additions,
               deletions: gitLineStats.deletions,
-            })}
-            style={{ display: "flex", alignItems: "center", gap: 6, height: 24, padding: "0 10px", fontSize: 12 }}
-          >
-            <span style={{ color: "var(--text-dim)" }}>
-              {t("files.changedCount", { count: gitFiles.length })}
-            </span>
-            <span style={{ color: GIT_STATUS_COLORS.added, fontFamily: "var(--font-mono)" }}>+{gitLineStats.additions}</span>
-            <span style={{ color: GIT_STATUS_COLORS.deleted, fontFamily: "var(--font-mono)" }}>-{gitLineStats.deletions}</span>
+            })} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ color: "var(--text-dim)" }}>{t("files.changedCount", { count: gitFiles.length })}</span>
+              <span style={{ color: GIT_STATUS_COLORS.added, fontFamily: "var(--font-mono)" }}>+{gitLineStats.additions}</span>
+              <span style={{ color: GIT_STATUS_COLORS.deleted, fontFamily: "var(--font-mono)" }}>-{gitLineStats.deletions}</span>
+            </div>
+            <ChangedFilesViewSwitch layout={changesLayout} onChange={setChangesLayout} />
           </div>
-          {gitFiles.map((status) => (
-            <ChangeRow
-              key={status.filePath}
-              status={status}
-              cwd={cwd}
-              onOpenFile={onOpenFile}
-              onAtMention={onAtMention}
-              t={t}
-            />
+          {changesLayout === "list" ? gitFiles.map((status) => (
+            <ChangeRow key={status.filePath} status={status} cwd={cwd} onOpenFile={onOpenFile} onAtMention={onAtMention} t={t} />
+          )) : changeRows.map((row) => row.kind === "folder" ? (
+            <ChangedFilesFolder key={row.filePath} name={row.name} path={row.path} depth={row.depth} expanded={row.expanded}
+              onToggle={() => setChangesFolders((previous) => new Map(previous).set(row.path, !row.expanded))} />
+          ) : (
+            <ChangeRow key={row.filePath} status={row.file} depth={row.depth} cwd={cwd} onOpenFile={onOpenFile} onAtMention={onAtMention} t={t} />
           ))}
         </div>
       )}

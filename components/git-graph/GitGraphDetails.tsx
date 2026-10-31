@@ -5,6 +5,11 @@ import type { GitCommitDetail, GitFileStatus, GitGraphCommit } from "@/lib/git-t
 import { getFileName, getRelativeFilePath } from "@/lib/file-paths";
 import { formatCommitDate } from "@/lib/git-graph-model";
 import { getFileIcon } from "../FileIcons";
+import { ChangedFilesFolder } from "../ChangedFilesFolder";
+import { ChangedFilesViewSwitch } from "../ChangedFilesViewSwitch";
+import { buildChangedFilesTree, visibleChangedFileRows } from "@/lib/changed-files-tree";
+import type { ChangedFilesLayout } from "@/lib/changed-files-layout";
+import { useChangedFilesLayout } from "@/hooks/useChangedFilesLayout";
 import { useI18n } from "@/hooks/useI18n";
 
 interface GitGraphDetailsCommonProps {
@@ -117,6 +122,31 @@ function VirtualFileList<T extends { filePath: string }>({ files, scrollRef, ren
   );
 }
 
+/** Keep the same virtual scrollport for list rows and visible tree rows. */
+function GraphChangedFileList<T extends { filePath: string }>({ files, layout, cwd, scrollRef, renderFile }: {
+  files: T[];
+  layout: ChangedFilesLayout;
+  /** Working files are absolute; commit paths are already repository-relative. */
+  cwd?: string;
+  scrollRef: RefObject<HTMLDivElement | null>;
+  renderFile: (file: T, depth?: number) => ReactNode;
+}) {
+  const [folders, setFolders] = useState<Map<string, boolean>>(() => new Map());
+  const tree = useMemo(() => layout === "tree"
+    ? buildChangedFilesTree(files, (file) => cwd ? getRelativeFilePath(file.filePath, cwd) : file.filePath)
+    : null, [cwd, files, layout]);
+  const rows = useMemo(() => tree ? visibleChangedFileRows(tree, folders) : [], [tree, folders]);
+
+  return layout === "list" ? (
+    <VirtualFileList files={files} scrollRef={scrollRef} renderFile={(file) => renderFile(file)} />
+  ) : (
+    <VirtualFileList files={rows} scrollRef={scrollRef} renderFile={(row) => row.kind === "folder" ? (
+      <ChangedFilesFolder name={row.name} path={row.path} depth={row.depth} expanded={row.expanded} height={FILE_ROW_HEIGHT}
+        onToggle={() => setFolders((previous) => new Map(previous).set(row.path, !row.expanded))} />
+    ) : renderFile(row.file, row.depth)} />
+  );
+}
+
 export function GitGraphDetails(props: GitGraphDetailsProps) {
   const { cwd, height, onHeightChange, onClose } = props;
   const commit = props.kind === "commit" ? props.commit : null;
@@ -125,6 +155,8 @@ export function GitGraphDetails(props: GitGraphDetailsProps) {
   const [detail, setDetail] = useState<GitCommitDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [copiedSha, setCopiedSha] = useState(false);
+  const [workingLayout, setWorkingLayout] = useChangedFilesLayout("working");
+  const [commitLayout, setCommitLayout] = useChangedFilesLayout("commit");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -325,16 +357,20 @@ export function GitGraphDetails(props: GitGraphDetailsProps) {
       <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "6px 12px", position: "relative" }}>
         {props.kind === "working" ? (
           <div data-testid="git-graph-working-details">
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
-              {t("gitGraph.changedFiles", { count: props.files.length })}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
+              <span>{t("gitGraph.changedFiles", { count: props.files.length })}</span>
+              <ChangedFilesViewSwitch layout={workingLayout} onChange={setWorkingLayout} />
             </div>
-            <VirtualFileList files={props.files} scrollRef={scrollRef} renderFile={(file) => (
+            <GraphChangedFileList key={`${cwd}:working`} files={props.files} layout={workingLayout} cwd={cwd} scrollRef={scrollRef} renderFile={(file, depth) => (
                 <button key={file.filePath} type="button" onClick={() => props.onOpenWorkingFile?.(file.filePath)}
                   title={file.filePath}
-                  style={{ display: "flex", alignItems: "center", gap: 7, width: "100%", height: "100%", boxSizing: "border-box", padding: "4px 8px", borderRadius: 4, background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: 11.5, cursor: "pointer", textAlign: "left" }}>
-                  <span title={t(`files.${file.status}`)} aria-label={t(`files.${file.status}`)} style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", width: 14, flexShrink: 0 }}>{file.code}</span>
+                  onMouseEnter={(event) => { if (depth !== undefined) event.currentTarget.style.background = "var(--bg-hover)"; }}
+                  onMouseLeave={(event) => { if (depth !== undefined) event.currentTarget.style.background = "transparent"; }}
+                  style={{ display: "flex", alignItems: "center", gap: 7, width: "100%", height: "100%", boxSizing: "border-box", padding: "4px 8px", paddingLeft: depth === undefined ? 8 : 22 + depth * 14, borderRadius: 4, background: depth === undefined ? "var(--bg)" : "transparent", border: depth === undefined ? "1px solid var(--border)" : "1px solid transparent", color: "var(--text)", fontSize: 11.5, cursor: "pointer", textAlign: "left" }}>
+                  {depth === undefined && <span title={t(`files.${file.status}`)} aria-label={t(`files.${file.status}`)} style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", width: 14, flexShrink: 0 }}>{file.code}</span>}
                   <span style={{ display: "flex", flexShrink: 0, opacity: 0.85 }}>{getFileIcon(getFileName(file.filePath), 13)}</span>
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{getRelativeFilePath(file.filePath, cwd)}</span>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{depth === undefined ? getRelativeFilePath(file.filePath, cwd) : getFileName(file.filePath)}</span>
+                  {depth !== undefined && <span title={t(`files.${file.status}`)} aria-label={t(`files.${file.status}`)} style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", width: 14, flexShrink: 0 }}>{file.code}</span>}
                   <LineStats additions={file.additions} deletions={file.deletions} />
                   <span style={{ fontSize: 10, color: "var(--accent)", flexShrink: 0 }}>{t("gitGraph.viewDiff")} ↗</span>
                 </button>
@@ -350,60 +386,30 @@ export function GitGraphDetails(props: GitGraphDetailsProps) {
           </div>
         ) : (
           <div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
-              {t("gitGraph.changedFiles", { count: detail.files.length })}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
+              <span>{t("gitGraph.changedFiles", { count: detail.files.length })}</span>
+              <ChangedFilesViewSwitch layout={commitLayout} onChange={setCommitLayout} />
             </div>
-            <VirtualFileList files={detail.files} scrollRef={scrollRef} renderFile={(file) => {
-                const name = file.filePath.split("/").pop() || file.filePath;
+            <GraphChangedFileList key={`${cwd}:commit:${commitSha}`} files={detail.files} layout={commitLayout} scrollRef={scrollRef} renderFile={(file, depth) => {
+                const name = getFileName(file.filePath);
                 return (
-                  <div
+                  <button
                     key={file.filePath}
+                    type="button"
                     onClick={() => { if (props.kind === "commit") props.onOpenFileDiff?.(file.filePath, props.commit.sha); }}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      height: "100%",
-                      boxSizing: "border-box",
-                      padding: "4px 8px",
-                      borderRadius: 4,
-                      background: "var(--bg)",
-                      border: "1px solid var(--border)",
-                      fontSize: 11.5,
-                      cursor: "pointer",
-                      gap: 8,
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = "var(--bg-hover)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = "var(--bg)";
-                    }}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", height: "100%", boxSizing: "border-box", padding: "4px 8px", paddingLeft: depth === undefined ? 8 : 22 + depth * 14, borderRadius: 4, background: depth === undefined ? "var(--bg)" : "transparent", border: depth === undefined ? "1px solid var(--border)" : "1px solid transparent", color: "var(--text)", fontSize: 11.5, cursor: "pointer", textAlign: "left", gap: 8 }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = depth === undefined ? "var(--bg)" : "transparent"; }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                      <span style={{ opacity: 0.85, display: "flex", alignItems: "center" }}>
-                        {getFileIcon(name, 13)}
-                      </span>
-                      <span
-                        title={file.filePath}
-                        style={{
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          color: "var(--text)",
-                        }}
-                      >
-                        {file.filePath}
-                      </span>
-                    </div>
-
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                      <span style={{ opacity: 0.85, display: "flex", alignItems: "center" }}>{getFileIcon(name, 13)}</span>
+                      <span title={file.filePath} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{depth === undefined ? file.filePath : name}</span>
+                    </span>
+                    <span style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                       <LineStats additions={file.additions} deletions={file.deletions} />
-                      <span style={{ fontSize: 10, color: "var(--accent)" }}>
-                        {t("gitGraph.viewDiff")} ↗
-                      </span>
-                    </div>
-                  </div>
+                      <span style={{ fontSize: 10, color: "var(--accent)" }}>{t("gitGraph.viewDiff")} ↗</span>
+                    </span>
+                  </button>
                 );
               }} />
           </div>
