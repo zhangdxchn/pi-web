@@ -40,6 +40,11 @@ export interface GitGraphRef {
   type: GitGraphRefType;
   name: string;
   current?: boolean;
+  /** Fully qualified Git reference, distinct from its display name. */
+  fullName?: string;
+  annotated?: boolean;
+  remote?: string;
+  symbolic?: boolean;
 }
 
 export interface GitGraphCommit {
@@ -59,6 +64,8 @@ export interface GitGraphData {
   branches: string[];
   currentBranch: string;
   hasMore: boolean;
+  headSha?: string;
+  remotes?: string[];
 }
 
 export interface GitCommitFileChange {

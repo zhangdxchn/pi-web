@@ -18,6 +18,7 @@ import {
 } from "@/lib/git-graph-model";
 import { GitGraphRowSvg } from "./GitGraphRowSvg";
 import { GitGraphDetails } from "./GitGraphDetails";
+import { GitGraphActions, type GitGraphActionTarget } from "./GitGraphActions";
 import { useGitGraphColumns } from "./useGitGraphColumns";
 import styles from "./GitGraphView.module.css";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -26,13 +27,15 @@ import { useI18n } from "@/hooks/useI18n";
 interface GitGraphViewProps {
   cwd: string;
   onOpenFileDiff?: (filePath: string, sha: string) => void;
+  onGitChanged?: () => void;
+  onOpenTerminal?: (cwd: string) => void;
 }
 
 const STORAGE_DETAILS_HEIGHT = "pi-web:git-graph-details-height";
 const STORAGE_SHOW_REMOTES = "pi-web:git-graph-show-remotes";
 const OVERSCAN = 20;
 
-export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
+export function GitGraphView({ cwd, onOpenFileDiff, onGitChanged, onOpenTerminal }: GitGraphViewProps) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const pageSize = isMobile ? 200 : 500;
@@ -40,6 +43,10 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
   const [commits, setCommits] = useState<GitGraphCommit[]>([]);
   const [branches, setBranches] = useState<string[]>([]);
   const [currentBranch, setCurrentBranch] = useState<string>("");
+  const [headSha, setHeadSha] = useState("");
+  const [remotes, setRemotes] = useState<string[]>([]);
+  const [actionTarget, setActionTarget] = useState<GitGraphActionTarget | null>(null);
+  const [actionNotice, setActionNotice] = useState("");
   const [hasMore, setHasMore] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
@@ -111,6 +118,8 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
       setIsGitRepo(resData.isGitRepository);
       setBranches(resData.branches);
       setCurrentBranch(resData.currentBranch);
+      setHeadSha(resData.headSha ?? "");
+      setRemotes(resData.remotes ?? []);
       setHasMore(resData.hasMore);
       hasMoreRef.current = resData.hasMore;
       setCommits(resData.commits);
@@ -134,6 +143,14 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
   useEffect(() => {
     void loadInitial();
   }, [loadInitial]);
+
+  useEffect(() => {
+    setActionTarget(null);
+  }, [cwd, branchFilter, showRemotes, searchQuery]);
+
+  useEffect(() => {
+    if (actionTarget) setActionNotice("");
+  }, [actionTarget]);
 
   // 2. Append Load (runs on scroll to bottom or click "Load More")
   const handleLoadMore = useCallback(async () => {
@@ -215,6 +232,13 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
+    const opener = actionTarget?.opener;
+    if (actionTarget) {
+      setActionTarget(null);
+      requestAnimationFrame(() => {
+        if (opener && !opener.isConnected && document.activeElement === document.body && !isMobile) el.focus({ preventScroll: true });
+      });
+    }
     setScrollTop(el.scrollTop);
     if (headerScrollRef.current) headerScrollRef.current.scrollLeft = el.scrollLeft;
     // Automatically load more when scrolling within 300px of the bottom
@@ -270,45 +294,25 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
     }
   };
 
-  const renderRefBadges = (refs: GitGraphRef[], curveColor: string) => {
-    if (!refs || refs.length === 0) return null;
-    return refs.map((ref) => {
-      const badgeStyle = getRefBadgeStyle(ref, curveColor);
-
-      return (
-        <span
-          key={`${ref.type}:${ref.name}`}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 3,
-            padding: "1px 6px",
-            borderRadius: 4,
-            fontSize: 10.5,
-            lineHeight: "14px",
-            fontWeight: badgeStyle.fontWeight ?? 500,
-            flexShrink: 0,
-            background: badgeStyle.bg,
-            color: badgeStyle.color,
-            border: badgeStyle.border,
-          }}
-        >
-          {ref.type === "head" && (
-            <span
-              style={{
-                width: 5,
-                height: 5,
-                borderRadius: "50%",
-                background: "#34d399",
-                display: "inline-block",
-              }}
-            />
-          )}
-          {ref.name}
-        </span>
-      );
-    });
-  };
+  const renderRefBadges = (refs: GitGraphRef[], curveColor: string, commit: GitGraphCommit) => refs.map((ref) => {
+    const badgeStyle = getRefBadgeStyle(ref, curveColor);
+    const style: React.CSSProperties = {
+      display: "inline-flex", alignItems: "center", gap: 3, padding: "1px 6px", borderRadius: 4,
+      fontSize: 10.5, lineHeight: "14px", fontWeight: badgeStyle.fontWeight ?? 500, flexShrink: 0,
+      background: badgeStyle.bg, color: badgeStyle.color, border: badgeStyle.border,
+    };
+    if (ref.type === "head") return <span key="head" style={style}><span style={{ width: 5, height: 5, borderRadius: "50%", background: "#34d399" }} />{ref.name}</span>;
+    return <button key={`${ref.type}:${ref.name}`} type="button" className={styles.refButton} style={style}
+      aria-label={t("gitGraph.action.menu", { target: ref.name })}
+      onClick={(event) => {
+        event.stopPropagation();
+        setActionTarget({ commit, ref, anchor: { kind: "rect", rect: event.currentTarget.getBoundingClientRect(), align: "start" }, opener: event.currentTarget });
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault(); event.stopPropagation();
+        setActionTarget({ commit, ref, anchor: { kind: "point", x: event.clientX, y: event.clientY }, opener: event.currentTarget });
+      }}>{ref.name}</button>;
+  });
 
   if (loading && commits.length === 0) {
     return (
@@ -704,6 +708,20 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
               key={c.sha}
               data-testid="git-graph-row"
               onClick={() => handleSelectSha(c.sha)}
+              className={styles.row}
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.target !== event.currentTarget) return;
+                if (event.key === "Enter" || event.key === " ") { event.preventDefault(); handleSelectSha(c.sha); }
+                if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+                  event.preventDefault();
+                  setActionTarget({ commit: c, anchor: { kind: "rect", rect: event.currentTarget.getBoundingClientRect(), align: "start" }, opener: event.currentTarget });
+                }
+              }}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                setActionTarget({ commit: c, anchor: { kind: "point", x: event.clientX, y: event.clientY }, opener: event.currentTarget });
+              }}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -755,7 +773,7 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
                   borderRight: !isMobile ? "1px solid var(--border)" : undefined,
                 }}
               >
-                {renderRefBadges(c.refs, curveColor)}
+                {c.refs.length > 0 && <div className={styles.refList}>{renderRefBadges(c.refs, curveColor, c)}</div>}
                 <span
                   title={c.subject}
                   style={{
@@ -768,6 +786,8 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
                 >
                   {c.subject}
                 </span>
+                <button type="button" className={styles.rowActions} aria-label={t("gitGraph.action.commitMenu", { sha: c.shortSha })}
+                  onClick={(event) => { event.stopPropagation(); setActionTarget({ commit: c, anchor: { kind: "rect", rect: event.currentTarget.getBoundingClientRect(), align: "end" }, opener: event.currentTarget }); }}>⋯</button>
               </div>
 
               {/* Author Cell (Desktop only) */}
@@ -900,6 +920,16 @@ export function GitGraphView({ cwd, onOpenFileDiff }: GitGraphViewProps) {
           </div>
         )}
       </div>
+
+      {actionNotice && <div role="status" style={{ padding: "4px 10px", color: "var(--text-muted)", fontSize: 11, borderTop: "1px solid var(--border)" }}>{actionNotice}</div>}
+      {actionTarget && <GitGraphActions cwd={cwd} target={actionTarget} currentBranch={currentBranch} headSha={headSha} remotes={remotes} mobile={isMobile}
+        onClose={() => setActionTarget(null)} onNotice={setActionNotice} onOpenTerminal={onOpenTerminal}
+        onFilter={(branch) => { setBranchFilter(branch); setActionTarget(null); }}
+        onChanged={(action) => {
+          if ((action === "branch-rename" || action === "branch-delete") && branchFilter === actionTarget.ref?.name) setBranchFilter("all");
+          else void loadInitial();
+          onGitChanged?.();
+        }} />}
 
       {/* 4. Bottom Commit Details Drawer */}
       {selectedCommit && (
