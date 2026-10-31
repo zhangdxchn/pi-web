@@ -185,8 +185,12 @@ function sectionKeys(html) {
 
 /** Each key's name and state, in order. */
 function keyLabels(markup) {
-  return [...markup.matchAll(/<button type="button"( disabled="")? title="([^"]+)" aria-label="\2"( aria-pressed="(true|false)")?( aria-expanded="(true|false)" aria-controls="[^"]+")? class="[^"]+"/g)]
-    .map((match) => `${match[2]}${match[1] ? " (disabled)" : ""}${match[4] ? ` pressed=${match[4]}` : ""}${match[6] ? ` expanded=${match[6]}` : ""}`);
+  return [...markup.matchAll(/<button\b[^>]*class="[^"]*sidebar-tool-button[^"]*"[^>]*>/g)].map(([tag]) => {
+    const label = tag.match(/aria-label="([^"]+)"/)?.[1];
+    const pressed = tag.match(/aria-pressed="(true|false)"/)?.[1];
+    const expanded = tag.match(/aria-expanded="(true|false)"/)?.[1];
+    return `${label}${/\sdisabled=""/.test(tag) ? " (disabled)" : ""}${pressed ? ` pressed=${pressed}` : ""}${expanded ? ` expanded=${expanded}` : ""}`;
+  });
 }
 
 /** A rule's declarations in app/sidebar.css (its first rule for the selector). */
@@ -224,7 +228,7 @@ test("below the sessions the section's header row holds the files' keys in the f
   assert.match(keys, /^<div class="sidebar-files-keys" role="group" aria-label="File actions">/);
   assert.deepEqual(keyLabels(keys), [
     "Open workspace terminal",
-    "Open in file manager",
+    "Open project in… expanded=false",
     "Upload files to project root",
     "Refresh file list",
     "Show ignored files pressed=false",
@@ -244,7 +248,7 @@ test("below the sessions the section's header row holds the files' keys in the f
   // terminal without a handler, where the files tab leaves it out.
   assert.deepEqual(keyLabels(sectionKeys(render())), [
     "Open workspace terminal (disabled)",
-    "Open in file manager (disabled)",
+    "Open project in… (disabled) expanded=false",
     "Upload files to project root (disabled)",
     "Refresh file list (disabled)",
     "Show ignored files (disabled) pressed=false",
@@ -253,7 +257,7 @@ test("below the sessions the section's header row holds the files' keys in the f
   ]);
   assert.deepEqual(keyLabels(sectionKeys(render({ selectedCwd: "/work/alpha" }))).slice(0, 3), [
     "Open workspace terminal (disabled)",
-    "Open in file manager",
+    "Open project in… expanded=false",
     "Upload files to project root",
   ]);
 

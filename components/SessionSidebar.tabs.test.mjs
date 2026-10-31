@@ -47,8 +47,12 @@ function actionsRow(html) {
 
 /** Each key's name and state, in order (as SessionSidebar.test.mjs reads the stacked row's). */
 function keyLabels(markup) {
-  return [...markup.matchAll(/<button type="button"( disabled="")? title="([^"]+)" aria-label="\2"( aria-pressed="(true|false)")?( aria-expanded="(true|false)" aria-controls="[^"]+")? class="[^"]+"/g)]
-    .map((match) => `${match[2]}${match[1] ? " (disabled)" : ""}${match[4] ? ` pressed=${match[4]}` : ""}${match[6] ? ` expanded=${match[6]}` : ""}`);
+  return [...markup.matchAll(/<button\b[^>]*class="[^"]*sidebar-tool-button[^"]*"[^>]*>/g)].map(([tag]) => {
+    const label = tag.match(/aria-label="([^"]+)"/)?.[1];
+    const pressed = tag.match(/aria-pressed="(true|false)"/)?.[1];
+    const expanded = tag.match(/aria-expanded="(true|false)"/)?.[1];
+    return `${label}${/\sdisabled=""/.test(tag) ? " (disabled)" : ""}${pressed ? ` pressed=${pressed}` : ""}${expanded ? ` expanded=${expanded}` : ""}`;
+  });
 }
 
 test("the fixture stands in for the whole hook module", async () => {
@@ -80,7 +84,7 @@ test("the files tab's keys: the folder's four, then the tree's two views, always
   // is the tab's.
   assert.deepEqual(keyLabels(row), [
     "Open workspace terminal",
-    "Open in file manager",
+    "Open project in… expanded=false",
     "Upload files to project root",
     "Refresh file list",
     "Show ignored files pressed=false",
@@ -95,7 +99,7 @@ test("the files tab's keys: the folder's four, then the tree's two views, always
   // Without a terminal (no onOpenTerminal) the other five stay; the files
   // tab leaves it out where the row below the sessions disables it.
   assert.deepEqual(keyLabels(actionsRow(render({ selectedCwd: "/work/alpha" }))), [
-    "Open in file manager",
+    "Open project in… expanded=false",
     "Upload files to project root",
     "Refresh file list",
     "Show ignored files pressed=false",

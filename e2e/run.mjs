@@ -19,6 +19,7 @@ import { checkModelSelector } from "./model-selector.mjs";
 import { checkFilesPlacement, showSidebarSessions } from "./sidebar.mjs";
 import { checkSessionNavigation } from "./session-navigation.mjs";
 import { checkProjectNavigation, createProjectNavigationFixtures } from "./project-navigation.mjs";
+import { checkOpenInApp } from "./open-in-app.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const mode = process.env.E2E_SERVER_MODE || "dev";
@@ -536,6 +537,7 @@ try {
     },
   });
   await checkProjectNavigation({ browser, base, artifacts, fixture: projectNavigation, otherSessionId: BRANCH, api, post });
+  await checkOpenInApp({ browser, base, cwd: project, sessionId: RICH, artifacts });
 } catch (error) {
   console.error(error);
   process.exitCode = 1;

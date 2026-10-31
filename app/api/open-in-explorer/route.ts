@@ -3,6 +3,8 @@ import { resolve } from "path";
 import { NextResponse } from "next/server";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 import { isFileManagerSupported, isLoopbackHost, launchFileManager } from "@/lib/open-in-file-manager";
+import { findVisualStudioCode, isApplicationAvailable, launchApplication, parseApplicationTarget } from "@/lib/open-in-application";
+import { isApiRequestAllowed } from "@/lib/request-security";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -17,7 +19,8 @@ function availabilityFor(request: Request): { supported: boolean; reason: string
 /** Lets the sidebar pick the button label and disable it when unavailable. */
 export async function GET(request: Request) {
   const { supported, reason } = availabilityFor(request);
-  return NextResponse.json({ supported, reason, platform: process.platform });
+  const vscodeAvailable = supported && Boolean(await findVisualStudioCode());
+  return NextResponse.json({ supported, reason, platform: process.platform, vscodeAvailable });
 }
 
 /** Opens the session workspace in the OS file manager. */
@@ -28,8 +31,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: reason }, { status: 403 });
     }
 
-    const body = await request.json() as { cwd?: unknown };
-    if (typeof body.cwd !== "string" || !body.cwd.trim()) {
+    if (!isApiRequestAllowed(request)) {
+      return NextResponse.json({ error: "request-denied" }, { status: 403 });
+    }
+    const body = await request.json() as { cwd?: unknown; application?: unknown } | null;
+    if (!body || typeof body.cwd !== "string" || !body.cwd.trim()) {
       return NextResponse.json({ error: "cwd-required" }, { status: 400 });
     }
     const target = resolve(body.cwd);
@@ -43,7 +49,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "not-a-directory" }, { status: 400 });
     }
 
-    await launchFileManager(target);
+    // An omitted application retains the original file-manager API.
+    if (body.application === undefined) {
+      await launchFileManager(target);
+    } else {
+      const application = parseApplicationTarget(body.application);
+      if (!application) return NextResponse.json({ error: "application-invalid" }, { status: 400 });
+      const appPath = application.kind === "vscode" ? await findVisualStudioCode() : application.path;
+      if (!appPath || !(await isApplicationAvailable(process.platform, appPath))) {
+        return NextResponse.json({ error: "application-not-found" }, { status: 404 });
+      }
+      try {
+        await launchApplication(appPath, target);
+      } catch {
+        return NextResponse.json({ error: "application-launch-failed" }, { status: 500 });
+      }
+    }
     return NextResponse.json({ opened: true });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });

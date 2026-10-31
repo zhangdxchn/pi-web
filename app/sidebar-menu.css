@@ -719,6 +719,29 @@ html[data-keyboard-open] .sidebar-sheet {
   padding: 2px 4px 4px;
 }
 
+/* The open-in-app menu uses the same compact form and input controls. */
+.open-in-app-label {
+  display: block;
+  margin: 7px 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.open-in-app-label .sidebar-worktree-input {
+  margin-top: 4px;
+}
+
+.open-in-app-hint {
+  padding: 5px 9px 7px;
+  color: var(--text-dim);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.sidebar-sheet .open-in-app-hint {
+  font-size: 12px;
+}
+
 .sidebar-worktree-input {
   display: block;
   width: 100%;
