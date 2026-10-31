@@ -18,6 +18,7 @@ import { checkModelContext } from "./model-context.mjs";
 import { checkModelSelector } from "./model-selector.mjs";
 import { checkFilesPlacement, showSidebarSessions } from "./sidebar.mjs";
 import { checkSessionNavigation } from "./session-navigation.mjs";
+import { checkUnreadSection } from "./session-unread.mjs";
 import { checkProjectNavigation, createProjectNavigationFixtures } from "./project-navigation.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -536,6 +537,9 @@ try {
     },
   });
   await checkProjectNavigation({ browser, base, artifacts, fixture: projectNavigation, otherSessionId: BRANCH, api, post });
+  // The unread check uses its own contexts and restores its pin; run it last
+  // so its sidebar's project-order bookkeeping cannot affect earlier checks.
+  await checkUnreadSection({ browser, base, artifacts, api, post, pinnedId: BRANCH, groupId: RICH, currentId: CODE_BACKGROUND });
 } catch (error) {
   console.error(error);
   process.exitCode = 1;

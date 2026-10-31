@@ -19,6 +19,7 @@ import { splitForkSuffix } from "@/lib/session-fork-name";
 import { MAX_PROJECT_NAME_LENGTH, type ProjectMovePosition } from "@/lib/session-ui-state-shared";
 import {
   PINNED_MORE_KEY,
+  UNREAD_MORE_KEY,
   getRowOffsets,
   getVisibleRowIndices,
   revealScrollTop,
@@ -50,7 +51,7 @@ import {
 } from "./SidebarIcons";
 
 /**
- * The sessions tab's tree: the pinned section, every project as a group of
+ * The sessions tab's tree: unread and pinned sections, every project as a group of
  * session families, and the footer links, or the archive view's rows. It
  * renders the flat rows of lib/session-tree.ts in one virtualized scroll and
  * owns nothing but scroll position, viewport size, which row has focus and a
@@ -104,13 +105,14 @@ export interface SessionTreeProps {
   confirmDeleteRootId: string | null;
   /** Row whose menu is open: kept mounted, its ⋯ shown pressed. A group row's key works too. */
   activeMenuRowKey: string | null;
-  onSelectFamily(family: SessionFamily): void;
+  onSelectFamily(row: SessionRow): void;
   /** `all` (Alt+click): every group follows this one. */
   onToggleGroup(projectKey: string, all: boolean): void;
-  /** Reveal SHOW_MORE_STEP more families; key is a projectKey or PINNED_MORE_KEY. */
+  /** Reveal SHOW_MORE_STEP more families; key is a projectKey or global section key. */
   onShowMore(key: string): void;
-  /** Back to the base limit; key is a projectKey or PINNED_MORE_KEY. */
+  /** Back to the base limit for that group or section. */
   onShowLess(key: string): void;
+  onToggleUnread(): void;
   onTogglePinned(): void;
   onArchiveFamily(family: SessionFamily): void;
   onRestoreFamily(family: SessionFamily): void;
@@ -320,7 +322,7 @@ export function SessionTree(props: SessionTreeProps): ReactNode {
   const handleMoreAction = useCallback((rowKey: string, key: string, action: "more" | "less", button: HTMLElement) => {
     const focus = document.activeElement === button;
     const keyboard = focus && button.matches(":focus-visible");
-    const fallbackKey = key === PINNED_MORE_KEY ? "pinned-header" : `group:${key}`;
+    const fallbackKey = key === UNREAD_MORE_KEY ? "unread-header" : key === PINNED_MORE_KEY ? "pinned-header" : `group:${key}`;
     pendingMoreRef.current = { rowKey, fallbackKey, focus, scroll: action === "less" || keyboard };
     if (action === "more") handlersRef.current.onShowMore(key);
     else handlersRef.current.onShowLess(key);
@@ -391,7 +393,7 @@ export function SessionTree(props: SessionTreeProps): ReactNode {
     }
   }, [visibleIndices]);
 
-  const hasTreeRows = rows.some((row) => row.kind === "session" || row.kind === "group");
+  const hasTreeRows = rows.some((row) => row.kind === "session" || row.kind === "group" || row.kind === "unread-header" || row.kind === "pinned-header");
   const showEmpty = !loading && !error && emptyLabel !== null && !hasTreeRows;
   // While dragging: the group's block is dimmed in place (groups never fold
   // up under the pointer), a line marks the drop, and a pill with the
@@ -580,6 +582,7 @@ const SessionRowView = memo(function SessionRowView({
 
   // The right column says the one thing worth knowing: awaiting input, else
   // running, else unread, else when (a pinned row names its project instead).
+  // An unread row also names its project, since it can come from any group.
   // An archived row shows its family's time like every row, never the archive
   // time: an old session archived today read as "just now" (#1351).
   // Nothing sits before the title, so it gets the room.
@@ -627,7 +630,10 @@ const SessionRowView = memo(function SessionRowView({
           {branch}
         </span>
       )}
-      <span className={`session-tree-meta${metaState}`} title={metaTitle}>{meta}</span>
+      <span className={`session-tree-meta${metaState}${context === "unread" ? " has-project" : ""}`} title={metaTitle}>
+        {context === "unread" && <span className="session-tree-project">{row.project.name}</span>}
+        {meta}
+      </span>
     </>
   );
 
@@ -636,7 +642,7 @@ const SessionRowView = memo(function SessionRowView({
       className={className}
       style={rowStyle(top, height)}
       data-row-key={row.key}
-      onClick={() => handlers.current.onSelectFamily(family)}
+      onClick={() => handlers.current.onSelectFamily(row)}
       onContextMenu={(event) => handlers.current.onRowContextMenu(row, event)}
     >
       {status.transient ? (
@@ -659,7 +665,7 @@ const SessionRowView = memo(function SessionRowView({
             event.stopPropagation();
             if (!isPlainActivation(event)) return;
             event.preventDefault();
-            handlers.current.onSelectFamily(family);
+            handlers.current.onSelectFamily(row);
           }}
         >
           {mainContent}
@@ -814,7 +820,7 @@ function DeleteConfirm({
  * label carries the count for screen readers. Also a project's badge in the
  * project menus (ProjectWorktreePicker), which counts no awaiting.
  */
-export function ActivitySummary({ running, awaiting = 0, unread, t }: { running: number; awaiting?: number; unread: number; t: (key: string) => string }) {
+export function ActivitySummary({ running, awaiting = 0, unread = 0, t }: { running: number; awaiting?: number; unread?: number; t: (key: string) => string }) {
   if (running === 0 && awaiting === 0 && unread === 0) return null;
   return (
     <span className="session-tree-summary">
@@ -940,7 +946,7 @@ const GroupRowView = memo(function GroupRowView({
         <ChevronIcon size={12} strokeWidth={3} className={`session-tree-chevron${expanded ? " is-open" : ""}`} />
         <span className="session-tree-group-name">{project.name}</span>
         {project.pinned && <PinIcon size={10} className="session-tree-group-pin" label={t("sidebar.pinnedProject")} />}
-        {!expanded && <ActivitySummary running={row.running} awaiting={row.awaiting} unread={row.unread} t={t} />}
+        {!expanded && <ActivitySummary running={row.running} awaiting={row.awaiting} t={t} />}
       </button>
       <span className="session-tree-group-actions">
         <button
@@ -992,6 +998,7 @@ const PlainRowView = memo(function PlainRowView({
   const style = rowStyle(top, height);
 
   switch (row.kind) {
+    case "unread-header":
     case "pinned-header":
       return (
         <div className="session-tree-row session-tree-pinned-header" style={style} data-row-key={row.key}>
@@ -999,10 +1006,10 @@ const PlainRowView = memo(function PlainRowView({
             type="button"
             className="session-tree-pinned-toggle"
             aria-expanded={!row.collapsed}
-            onClick={() => handlers.current.onTogglePinned()}
+            onClick={() => row.kind === "unread-header" ? handlers.current.onToggleUnread() : handlers.current.onTogglePinned()}
           >
             <ChevronIcon size={12} strokeWidth={3} className={`session-tree-chevron${row.collapsed ? "" : " is-open"}`} />
-            <span className="session-tree-pinned-label">{t("sidebar.pinned")}</span>
+            <span className="session-tree-pinned-label">{t(row.kind === "unread-header" ? "sidebar.unread" : "sidebar.pinned")}</span>
             <span className="session-tree-pinned-count">· {row.count}</span>
             {row.collapsed && row.running > 0 && (
               <span
@@ -1020,20 +1027,13 @@ const PlainRowView = memo(function PlainRowView({
                 aria-label={`${t("sidebar.agentAwaitingInput")} (${row.awaiting})`}
               />
             )}
-            {row.collapsed && row.unread > 0 && (
-              <span
-                className="session-tree-pinned-dot is-unread"
-                role="img"
-                title={t("sidebar.newSessionActivity")}
-                aria-label={`${t("sidebar.newSessionActivity")} (${row.unread})`}
-              />
-            )}
           </button>
         </div>
       );
+    case "unread-more":
     case "pinned-more":
     case "group-more": {
-      const moreKey = row.kind === "pinned-more" ? PINNED_MORE_KEY : row.projectKey;
+      const moreKey = row.kind === "unread-more" ? UNREAD_MORE_KEY : row.kind === "pinned-more" ? PINNED_MORE_KEY : row.projectKey;
       return (
         <div className="session-tree-row session-tree-more" style={style} data-row-key={row.key}>
           {row.hidden > 0 && (

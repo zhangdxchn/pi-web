@@ -55,7 +55,7 @@ export function sessionMenuEntries(
     ];
   }
   return [
-    { kind: "action", id: context === "pinned" ? "unpin" : "pin", shortcut: "P" },
+    { kind: "action", id: status.pinned ? "unpin" : "pin", shortcut: "P" },
     { kind: "action", id: "rename", shortcut: "R" },
     { kind: "action", id: "fork", shortcut: "F" },
     { kind: "action", id: status.unread ? "mark-read" : "mark-unread", shortcut: "U" },

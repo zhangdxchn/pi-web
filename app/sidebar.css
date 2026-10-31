@@ -170,10 +170,6 @@
   background: var(--accent);
 }
 
-.session-tree-pinned-dot.is-unread {
-  background: #0891b2;
-}
-
 .session-tree-pinned-dot.is-awaiting {
   background: #d97706;
 }
@@ -371,7 +367,12 @@ a.session-tree-main {
   white-space: nowrap;
 }
 
-/* A pinned row's project: meta, in the time's type (.session-tree-meta). */
+/* An unread row shows its project beside its activity status. */
+.session-tree-meta.has-project {
+  gap: 6px;
+}
+
+/* A pinned or unread row's project: meta, in the time's type. */
 .session-tree-project {
   display: inline-block;
   max-width: 70px;

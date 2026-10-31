@@ -578,6 +578,7 @@ export const zhTWLocale: LocalePlugin = {
     "sidebar.collapseOtherGroups": "摺疊其他專案",
     "sidebar.expandAllGroups": "展開全部專案",
     "sidebar.collapseAllGroups": "收合全部專案",
+    "sidebar.unread": "未讀",
     "sidebar.pinned": "釘選",
     "sidebar.pinnedProject": "已釘選",
     "sidebar.pin": "釘選",
