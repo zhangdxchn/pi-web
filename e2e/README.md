@@ -54,6 +54,15 @@ Coverage:
   session, directory, draft, files and group expansion; + still opens in the
   same tab, and no session is created, copied, prompted or stopped. An
   unavailable directory shows the validation error instead of another session.
+- Git Graph follows Settings' English, Simplified and Traditional Chinese choices
+  live without reloading its data or losing its search; loading, pagination,
+  commit details, errors and the saved language on mobile are checked with a
+  scripted API. The toolbar's search, refresh and branch controls fit without
+  overlap across narrow and wide desktop panels and mobile widths.
+  A real repository checks historical file diffs, separate commit
+  tabs, and returning to the selected graph on desktop and mobile.
+  Column tests cover resizing by mouse, keyboard and touch, saved widths,
+  narrow-panel horizontal scrolling, and header and virtual-row alignment.
 - The model picker, with a synthetic catalog: on a phone, a simulated keyboard
   (visual viewport shrink, pan, a late height with no event) keeps the same
   filter focused and the list in the visible viewport. Native phone keyboards

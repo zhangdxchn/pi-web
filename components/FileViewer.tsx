@@ -451,6 +451,8 @@ function DiffView({ patch }: { patch: string }) {
   );
 }
 
+export { DiffView };
+
 function ImageViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Props) {
   const { t } = useI18n();
   const [watching, setWatching] = useState(false);

@@ -1,0 +1,1838 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pi-Web Git Graph Recommended Solution · 推荐方案交互原型</title>
+  <style>
+    /* -------------------------------------------------------------
+       1. Pi-Web Design Tokens & CSS Variables (1:1 还原 app/globals.css)
+       ------------------------------------------------------------- */
+    :root, html[data-theme="light"] {
+      color-scheme: light;
+      --bg: #ffffff;
+      --bg-panel: #f5f5f5;
+      --bg-hover: #eeeeee;
+      --bg-selected: #e8e8e8;
+      --border: #e0e0e0;
+      --text: #1a1a1a;
+      --text-muted: #515c6b;
+      --text-dim: #5e6673;
+      --accent: #245bce;
+      --accent-hover: #1d4ed8;
+      --accent-contrast: #ffffff;
+      --user-bg: #eff6ff;
+      --assistant-bg: #ffffff;
+      --tool-bg: #f9fafb;
+      --bg-subtle: rgba(0,0,0,0.03);
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    html.dark, html[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #1a1a1a;
+      --bg-panel: #242424;
+      --bg-hover: #2e2e2e;
+      --bg-selected: #383838;
+      --border: #454545;
+      --text: #e8e8e8;
+      --text-muted: #b7b7b7;
+      --text-dim: #a4a4a4;
+      --accent: #a4c2f4;
+      --accent-hover: #c3d8fa;
+      --accent-contrast: #182234;
+      --user-bg: #292929;
+      --assistant-bg: #1a1a1a;
+      --tool-bg: #222222;
+      --bg-subtle: rgba(255,255,255,0.04);
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    html[data-theme="mist"] {
+      color-scheme: light;
+      --bg: #f4f8f7;
+      --bg-panel: #e9f0ee;
+      --bg-hover: #e0eae7;
+      --bg-selected: #d7e4df;
+      --border: #afc4ba;
+      --text: #202e2b;
+      --text-muted: #455f56;
+      --text-dim: #52685f;
+      --accent: #1e6559;
+      --accent-hover: #174f46;
+      --accent-contrast: #ffffff;
+      --user-bg: #e0efeb;
+      --assistant-bg: #f4f8f7;
+      --tool-bg: #ecf3f0;
+      --bg-subtle: rgba(24,65,50,0.04);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* -------------------------------------------------------------
+       2. Designer HUD (Huashu Design Junior Pass & Decision Explainer)
+       ------------------------------------------------------------- */
+    .designer-hud {
+      background: #0f141c;
+      color: #9cb1cc;
+      border-bottom: 1px solid #233145;
+      padding: 8px 16px;
+      font-size: 11.5px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      z-index: 100;
+    }
+    .designer-hud strong {
+      color: #e2edfd;
+      font-weight: 600;
+    }
+    .hud-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: #182333;
+      border: 1px solid #293d59;
+      color: #60a5fa;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 10.5px;
+      font-family: var(--font-mono);
+    }
+    .hud-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .hud-btn {
+      background: #1c2636;
+      border: 1px solid #2f415c;
+      color: #c9daf8;
+      border-radius: 4px;
+      padding: 3px 9px;
+      font-size: 11px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.15s;
+    }
+    .hud-btn:hover {
+      background: #27374d;
+      color: #ffffff;
+      border-color: #4a638a;
+    }
+    .hud-btn.active {
+      background: var(--accent);
+      color: var(--accent-contrast);
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+
+    /* -------------------------------------------------------------
+       3. Main App Layout (Shell, Sidebar, Center Chat, Right Panel)
+       ------------------------------------------------------------- */
+    .app-root {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+      position: relative;
+    }
+
+    /* Left Sidebar Mock */
+    .sidebar-mock {
+      width: 250px;
+      background: var(--bg-panel);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+    .sidebar-header {
+      height: 38px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .sidebar-worktree-box {
+      margin: 8px 10px 4px;
+      padding: 6px 9px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--text);
+    }
+    .sidebar-actions-strip {
+      padding: 4px 10px 8px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      border-bottom: 1px solid var(--border);
+    }
+    .action-icon-btn {
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    .action-icon-btn:hover {
+      background: var(--bg-hover);
+      color: var(--text);
+    }
+    .action-icon-btn.active {
+      background: var(--bg-selected);
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    /* Center Chat Area */
+    .center-chat {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+      min-width: 0;
+      position: relative;
+    }
+    .chat-header {
+      height: 38px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      font-size: 12px;
+      color: var(--text-muted);
+      background: var(--bg-panel);
+    }
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .chat-bubble {
+      max-width: 720px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .chat-bubble.user {
+      align-self: flex-end;
+      background: var(--user-bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .chat-bubble.assistant {
+      align-self: flex-start;
+      background: var(--assistant-bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    /* Right Panel (Git Graph Tab Host) */
+    .right-panel {
+      width: 760px;
+      border-left: 1px solid var(--border);
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      min-width: 480px;
+      position: relative;
+      transition: width 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .right-panel.full-width {
+      position: absolute;
+      left: 250px;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      width: auto !important;
+      z-index: 50;
+      border-left: none;
+    }
+
+    /* Panel TabBar */
+    .panel-tabbar {
+      height: 36px;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: stretch;
+      overflow-x: auto;
+      flex-shrink: 0;
+    }
+    .panel-tab {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+      border-right: 1px solid var(--border);
+      cursor: pointer;
+      background: var(--bg-panel);
+      white-space: nowrap;
+    }
+    .panel-tab.active {
+      color: var(--text);
+      background: var(--bg);
+      font-weight: 600;
+    }
+    .tabbar-spacer { flex: 1; }
+    .tabbar-action-btn {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      border-left: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+    .tabbar-action-btn:hover {
+      color: var(--accent);
+      background: var(--bg-hover);
+    }
+
+    /* -------------------------------------------------------------
+       4. Git Graph Component
+       ------------------------------------------------------------- */
+    .git-graph-view {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      background: var(--bg);
+    }
+
+    /* Toolbar */
+    .graph-toolbar {
+      height: 38px;
+      padding: 0 10px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--bg);
+      flex-shrink: 0;
+    }
+    .branch-trigger {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      height: 24px;
+      padding: 0 8px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 11px;
+      color: var(--text);
+      cursor: pointer;
+    }
+    .branch-trigger:hover { background: var(--bg-hover); }
+    .branch-menu {
+      position: absolute;
+      top: 28px;
+      left: 0;
+      width: 250px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+      z-index: 200;
+      padding: 4px;
+      display: none;
+    }
+    .branch-menu.show { display: block; }
+    .branch-option {
+      padding: 5px 8px;
+      border-radius: 4px;
+      font-size: 11.5px;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+    .branch-option:hover { background: var(--bg-hover); color: var(--accent); }
+    .branch-option.selected {
+      background: var(--bg-selected);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    /* Show Remote Branches Toggle (vscode-git-graph alignment) */
+    .remote-toggle-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: var(--text-muted);
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid transparent;
+      transition: all 0.12s;
+    }
+    .remote-toggle-label:hover {
+      background: var(--bg-panel);
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    .search-box-wrap {
+      position: relative;
+      flex: 1;
+      max-width: 260px;
+    }
+    .search-box-wrap svg {
+      position: absolute;
+      left: 7px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-dim);
+      pointer-events: none;
+    }
+    .search-input {
+      width: 100%;
+      height: 24px;
+      padding: 0 22px 0 24px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      outline: none;
+    }
+    .search-input:focus {
+      border-color: var(--accent);
+      background: var(--bg);
+    }
+    .search-clear {
+      position: absolute;
+      right: 4px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 16px;
+      height: 16px;
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Table Column Header */
+    .graph-header {
+      height: 26px;
+      display: flex;
+      align-items: center;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--text-dim);
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    .col-header {
+      position: relative;
+      padding: 0 8px;
+      display: flex;
+      align-items: center;
+      height: 100%;
+      overflow: hidden;
+      white-space: nowrap;
+      border-right: 1px solid var(--border);
+    }
+    .col-header:last-child {
+      border-right: none;
+    }
+
+    /* Symmetrical, Highlightable Resizer Divider */
+    .col-resizer-handle {
+      position: absolute;
+      right: -6px;
+      top: 0;
+      bottom: 0;
+      width: 12px;
+      cursor: col-resize;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .col-resizer-line {
+      width: 2px;
+      height: 100%;
+      background: transparent;
+      transition: background 0.15s;
+    }
+    .col-resizer-handle:hover .col-resizer-line,
+    .col-resizer-handle.dragging .col-resizer-line {
+      background: var(--accent);
+    }
+
+    /* Virtual Scroll List & Rows */
+    .graph-body {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      min-height: 0;
+      position: relative;
+    }
+    .graph-row {
+      display: flex;
+      align-items: center;
+      height: 28px;
+      box-sizing: border-box;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      font-size: 12px;
+      background: var(--bg);
+      transition: background 0.08s;
+    }
+    .graph-row:hover { background: var(--bg-hover); }
+    .graph-row.selected { background: var(--bg-selected); }
+
+    .cell-graph {
+      flex-shrink: 0;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      overflow: hidden;
+      border-right: 1px solid var(--border);
+    }
+    .cell-desc {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 8px;
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      border-right: 1px solid var(--border);
+    }
+    .commit-subject {
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+      font-size: 12px;
+    }
+    .cell-author {
+      width: 120px;
+      flex-shrink: 0;
+      padding: 0 8px;
+      color: var(--text-muted);
+      font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      border-right: 1px solid var(--border);
+    }
+    .cell-date {
+      width: 125px;
+      flex-shrink: 0;
+      padding: 0 8px;
+      color: var(--text-dim);
+      font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+      border-right: 1px solid var(--border);
+    }
+    .cell-sha {
+      width: 75px;
+      flex-shrink: 0;
+      padding: 0 8px;
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: var(--text-dim);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Ref Badges */
+    .ref-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 10.5px;
+      line-height: 14px;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    .ref-badge.head {
+      background: #064e3b;
+      color: #6ee7b7;
+      border: 1px solid #047857;
+    }
+    .ref-badge.branch {
+      background: var(--bg-panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .ref-badge.branch.current {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--bg-selected);
+    }
+    .ref-badge.tag {
+      background: #451a03;
+      color: #fcd34d;
+      border: 1px solid #78350f;
+    }
+    .ref-badge.remote {
+      background: transparent;
+      color: var(--text-dim);
+      border: 1px dashed var(--border);
+      font-style: italic;
+    }
+    .ref-badge.orphan-ref {
+      background: #3b2814;
+      color: #fbbf24;
+      border: 1px dashed #d97706;
+    }
+
+    /* -------------------------------------------------------------
+       5. Git Graph Bottom Details Inspector
+       ------------------------------------------------------------- */
+    .graph-details-panel {
+      border-top: 1px solid var(--border);
+      background: var(--bg-panel);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      height: 190px;
+      position: relative;
+    }
+    .details-resizer {
+      position: absolute;
+      top: -3px;
+      left: 0;
+      right: 0;
+      height: 6px;
+      cursor: row-resize;
+      z-index: 10;
+    }
+    .details-resizer:hover { background: var(--accent); }
+    .details-header {
+      padding: 8px 12px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .details-title-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .details-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .details-sha-pill {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 1px 6px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+    .details-meta-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 4px;
+      flex-wrap: wrap;
+    }
+    .parent-tag {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      padding: 0 5px;
+      border-radius: 3px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--accent);
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    .root-tag-hint {
+      color: #f59e0b;
+      font-style: italic;
+    }
+
+    .details-content {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+    .files-list-col {
+      width: 250px;
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      padding: 4px;
+      flex-shrink: 0;
+    }
+    .file-change-item {
+      padding: 4px 8px;
+      font-size: 11.5px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      color: var(--text);
+    }
+    .file-change-item:hover { background: var(--bg-hover); }
+    .file-change-item.active {
+      background: var(--bg-selected);
+      color: var(--accent);
+      font-weight: 500;
+    }
+    .diff-stat {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      display: flex;
+      gap: 4px;
+    }
+    .diff-add { color: #22c55e; }
+    .diff-del { color: #ef4444; }
+
+    .diff-preview-col {
+      flex: 1;
+      padding: 8px 12px;
+      overflow-y: auto;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      line-height: 1.5;
+      background: var(--bg);
+      color: var(--text-muted);
+    }
+    .diff-line.add { background: rgba(34, 197, 94, 0.12); color: #22c55e; }
+    .diff-line.del { background: rgba(239, 68, 68, 0.12); color: #ef4444; }
+    .diff-line.hunk { color: var(--accent); opacity: 0.8; }
+
+    /* Tweaks Panel */
+    .tweaks-panel {
+      position: absolute;
+      top: 45px;
+      right: 20px;
+      width: 290px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+      z-index: 500;
+      padding: 12px;
+      font-size: 11.5px;
+      display: none;
+    }
+    .tweaks-panel.show { display: block; }
+    .tweaks-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .tweaks-slider { width: 120px; }
+  </style>
+</head>
+<body>
+
+  <!-- Top Designer HUD -->
+  <header class="designer-hud">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <strong>Huashu Design · Git Graph 推荐方案原型</strong>
+      <span class="hud-badge">DATE-ORDER · DYNAMIC MIN-WIDTH · SHOW REMOTES TOGGLE</span>
+    </div>
+    <div class="hud-controls">
+      <button class="hud-btn active" id="btn-toggle-remotes-hud" title="切换是否加载远端分支（对齐 vscode-git-graph）">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        <span id="hud-remotes-label">远端分支: 显示中 (含 ce57ffd)</span>
+      </button>
+      <button class="hud-btn" id="btn-toggle-layout" title="切换右侧分栏与全屏展开模式">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/></svg>
+        <span id="layout-label">全屏展开</span>
+      </button>
+      <button class="hud-btn" id="btn-toggle-theme">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+        <span id="theme-label">浅色模式</span>
+      </button>
+      <button class="hud-btn" id="btn-open-tweaks">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
+        <span>实时调参 (Tweaks)</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <div class="app-root">
+
+    <!-- 1. Left Sidebar Simulation -->
+    <aside class="sidebar-mock">
+      <div class="sidebar-header">
+        <span>Workspaces</span>
+        <span style="font-size:11px; color:var(--text-dim);">thinkrail</span>
+      </div>
+      <div class="sidebar-worktree-box">
+        <span style="display:flex; align-items:center; gap:4px; font-weight:500;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9"/></svg>
+          local-test-29
+        </span>
+        <span style="color:var(--text-dim); font-size:10px;">main worktree</span>
+      </div>
+      <div class="sidebar-actions-strip">
+        <button class="action-icon-btn" title="终端 (Terminal)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        </button>
+        <button class="action-icon-btn active" title="Git Graph 图谱 (本功能入口)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="9" r="3"/><path d="M6 9v6M18 12a9 9 0 0 1-9 9"/></svg>
+        </button>
+      </div>
+      <div style="flex:1; overflow-y:auto; padding:6px; font-size:11.5px; color:var(--text-muted);">
+        <div style="font-size:10px; color:var(--text-dim); padding:4px 6px; text-transform:uppercase;">Sessions</div>
+        <div style="padding:5px 8px; border-radius:4px; display:flex; align-items:center; gap:6px; background:var(--bg-selected); color:var(--text); font-weight:500;">
+          <span style="color:var(--accent);">●</span>
+          <span>实现 Git Graph 拓扑图谱</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 2. Center Chat Area -->
+    <main class="center-chat">
+      <div class="chat-header">
+        <span>Session · 实现 Git Graph 拓扑图谱</span>
+        <span style="font-size:11px;">Claude 3.7 Sonnet (Thinking)</span>
+      </div>
+      <div class="chat-messages">
+        <div class="chat-bubble user">
+          参考 https://github.com/mhutchie/vscode-git-graph 的实现，看看如何解决截图这类问题，就是只有一个点或者单独几个点，而没有下一个点的曲线（项目 thinkrail 的 git 历史）
+        </div>
+        <div class="chat-bubble assistant">
+          已对照 <strong>vscode-git-graph</strong> 源码与 thinkrail 真实 Git 历史完成方案对齐：
+          <ul style="margin-left:16px; margin-top:8px; line-height:1.65;">
+            <li><strong>问题本质</strong>：<code>ce57ffd</code> 是 JetBrains 团队创建的独立 PR 截图分支（5 张 PNG 图片，0 父提交，无任何代码祖先）。在图论拓扑中它本身就是一个孤立点。</li>
+            <li><strong>推荐解决方案</strong>：
+              <ol style="margin-left:16px; margin-top:4px;">
+                <li><strong>显示远端分支开关</strong>：顶部提供 <code>[✓] 显示远端分支</code> 勾选框。默认取消勾选后，所有 28 个无代码祖先的远端截图孤立点<strong>瞬间全部隐去</strong>，主干呈 100% 平滑连续曲线！</li>
+                <li><strong>当前分支范围追踪</strong>：下拉菜单增加 <code>当前分支 (Current Branch)</code>，只追溯工作区血缘。</li>
+                <li><strong>孤立根节点特征标记</strong>：对 0 父提交的孤立提交渲染为<strong>微圆角方形节点</strong>，并标注 <code>(根提交 · 无父提交)</code>，彻底消除“代码画断了”的误解。</li>
+              </ol>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </main>
+
+    <!-- 3. Right Panel: The Git Graph Host Tab -->
+    <section class="right-panel" id="right-panel">
+      <!-- TabBar Header -->
+      <div class="panel-tabbar">
+        <div class="panel-tab active">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" color="var(--accent)"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="9" r="3"/><path d="M6 9v6M18 12a9 9 0 0 1-9 9"/></svg>
+          <span style="font-weight:600; color:var(--text);">Git Graph</span>
+        </div>
+        <div class="tabbar-spacer"></div>
+        <button class="tabbar-action-btn" id="btn-expand-panel" title="全屏展开 / 恢复分栏">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M3 3l6 6m12-6-6 6M3 21l6-6m12 6-6-6"/></svg>
+        </button>
+      </div>
+
+      <!-- Git Graph Core View -->
+      <div class="git-graph-view">
+        
+        <!-- Toolbar -->
+        <div class="graph-toolbar">
+          <!-- Branch Dropdown -->
+          <div style="position:relative;">
+            <button class="branch-trigger" id="branch-trigger">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="9" r="3"/><path d="M6 9v6M18 12a9 9 0 0 1-9 9"/></svg>
+              <span id="selected-branch-text">全部分支</span>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <div class="branch-menu" id="branch-menu">
+              <div class="branch-option selected" data-branch="all">全部分支 (All Branches)</div>
+              <div class="branch-option" data-branch="current">当前分支 (Current Branch: local-test-29)</div>
+              <div class="branch-option" data-branch="feat-git-graph">feat-git-graph</div>
+              <div class="branch-option" data-branch="main">main</div>
+            </div>
+          </div>
+
+          <!-- Show Remote Branches Checkbox (vscode-git-graph alignment) -->
+          <label class="remote-toggle-label" title="包含/隐藏仅存在于远端的物料分支 (Show Remote Branches)">
+            <input type="checkbox" id="check-show-remotes" checked style="cursor:pointer;">
+            <span>显示远端分支</span>
+          </label>
+
+          <!-- Search Box -->
+          <div class="search-box-wrap">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" class="search-input" id="search-input" placeholder="搜索提交 (信息, SHA, 作者)…">
+            <button class="search-clear" id="search-clear" title="清空搜索">✕</button>
+          </div>
+
+          <!-- Commit Counter -->
+          <span style="font-size:11px; color:var(--text-dim); margin-left:auto; white-space:nowrap; font-variant-numeric:tabular-nums;" id="commit-counter">21 个提交</span>
+        </div>
+
+        <!-- Sticky Table Header with Centered Draggable Separators -->
+        <div class="graph-header" id="graph-header">
+          <div class="col-header" id="col-head-graph" style="width: 110px;">
+            <span>图谱</span>
+            <div class="col-resizer-handle" id="resizer-graph" title="拖拽调整图谱宽度，双击自适应重置">
+              <div class="col-resizer-line"></div>
+            </div>
+          </div>
+          <div class="col-header" id="col-head-desc" style="flex: 1; min-width: 160px;">
+            <span>描述</span>
+            <div class="col-resizer-handle" id="resizer-desc" title="拖拽调整描述宽度，双击重置">
+              <div class="col-resizer-line"></div>
+            </div>
+          </div>
+          <div class="col-header" style="width: 120px;">作者</div>
+          <div class="col-header" style="width: 125px;">日期</div>
+          <div class="col-header" style="width: 75px;">SHA</div>
+        </div>
+
+        <!-- Virtualized Commit Rows Container -->
+        <div class="graph-body" id="graph-body">
+          <!-- Dynamically injected rows -->
+        </div>
+
+        <!-- Collapsible Commit Inspector Details Drawer -->
+        <div class="graph-details-panel" id="details-panel">
+          <div class="details-resizer" id="resizer-details" title="拖拽调整详情抽屉高度"></div>
+          <div class="details-header">
+            <div style="min-width:0; flex:1;">
+              <div class="details-title-row">
+                <span class="details-title" id="d-subject">PR screenshots (review-only ref)</span>
+                <span class="details-sha-pill" id="d-sha" title="点击复制完整 SHA">ce57ffd</span>
+              </div>
+              <div class="details-meta-row">
+                <span>作者: <strong id="d-author" style="color:var(--text);">rsolmano</strong> (<span id="d-email">rinat.suleimanov@jetbrains.com</span>)</span>
+                <span>•</span>
+                <span id="d-date">2026-10-30 05:41</span>
+                <span>•</span>
+                <span>父提交: <span id="d-parents"></span></span>
+              </div>
+            </div>
+            <button id="btn-close-details" style="background:none; border:none; color:var(--text-dim); cursor:pointer; padding:2px 4px;" title="关闭详情">✕</button>
+          </div>
+
+          <div class="details-content">
+            <!-- Files List -->
+            <div class="files-list-col" id="details-files-list"></div>
+            <!-- Diff Preview -->
+            <div class="diff-preview-col" id="details-diff-preview"></div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Live Tweaks Floating Drawer -->
+  <div class="tweaks-panel" id="tweaks-panel">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; font-weight:600;">
+      <span>🎛️ Git Graph 实时调参</span>
+      <button id="btn-close-tweaks" style="background:none; border:none; color:var(--text-dim); cursor:pointer;">✕</button>
+    </div>
+    <div class="tweaks-row">
+      <span>行高 (Row Height)</span>
+      <input type="range" class="tweaks-slider" id="tweak-row-height" min="22" max="38" value="28">
+      <span id="val-row-height">28px</span>
+    </div>
+    <div class="tweaks-row">
+      <span>轨道宽度 (Lane Width)</span>
+      <input type="range" class="tweaks-slider" id="tweak-lane-width" min="12" max="24" value="16">
+      <span id="val-lane-width">16px</span>
+    </div>
+    <div class="tweaks-row">
+      <span>节点半径 (Node Radius)</span>
+      <input type="range" class="tweaks-slider" id="tweak-node-radius" min="3" max="7" value="4">
+      <span id="val-node-radius">4px</span>
+    </div>
+  </div>
+
+  <!-- -------------------------------------------------------------
+       6. Core JavaScript Engine (Real ThinkRail Commit Sequence)
+       ------------------------------------------------------------- -->
+  <script>
+    // 真实 ThinkRail 仓库该区段历史提交（包含 ce57ffd 孤立物料提交）
+    const ALL_COMMITS = [
+      {
+        sha: "072cfee4198c61a5b4f2c009d57a2c114f6b2819",
+        shortSha: "072cfee",
+        parents: ["df7cb6d2198c61a5b4f2c009d57a2c114f6b2810", "e13a1f32198c61a5b4f2c009d57a2c114f6b2818"],
+        author: "zhangdx",
+        authorEmail: "zhangdxchn@gmail.com",
+        committedAt: "2026-10-30T15:42:03+08:00",
+        subject: "Merge branch 'feat-git-graph' into local-test-29",
+        isRemoteOnly: false,
+        refs: [{ type: "head", name: "HEAD", current: true }, { type: "branch", name: "local-test-29", current: true }],
+        files: [{ path: "apps/web/src/panels/gitGraph/GitGraphPane.tsx", additions: 564, deletions: 0, hunk: "@@ -0,0 +1,564 @@\n+export function GitGraphPane() {}" }]
+      },
+      {
+        sha: "e13a1f32198c61a5b4f2c009d57a2c114f6b2818",
+        shortSha: "e13a1f3",
+        parents: ["0cf64b78198c61a5b4f2c009d57a2c114f6b2817"],
+        author: "zhangdx",
+        authorEmail: "zhangdxchn@gmail.com",
+        committedAt: "2026-10-30T14:47:40+08:00",
+        subject: "feat(web): enhance search width and resizable Graph and Description columns",
+        isRemoteOnly: false,
+        refs: [{ type: "branch", name: "feat-git-graph" }],
+        files: [{ path: "apps/web/src/panels/gitGraph/GitGraphRowSvg.tsx", additions: 114, deletions: 0, hunk: "@@ -0,0 +1,114 @@\n+export const GitGraphRowSvg = memo();" }]
+      },
+      {
+        sha: "0cf64b78198c61a5b4f2c009d57a2c114f6b2817",
+        shortSha: "0cf64b7",
+        parents: ["d98ce9bc198c61a5b4f2c009d57a2c114f6b2816"],
+        author: "zhangdx",
+        authorEmail: "zhangdxchn@gmail.com",
+        committedAt: "2026-10-30T14:47:40+08:00",
+        subject: "feat(web): wire git-graph layout validation, dynamic localization and resource identity",
+        isRemoteOnly: false,
+        refs: [],
+        files: [{ path: "packages/locales/zh-CN.json", additions: 39, deletions: 0, hunk: "@@ -470,0 +470,39 @@\n+\"gitGraph.title\": \"Git Graph\"" }]
+      },
+      {
+        sha: "d98ce9bc198c61a5b4f2c009d57a2c114f6b2816",
+        shortSha: "d98ce9b",
+        parents: ["804e746b198c61a5b4f2c009d57a2c114f6b2815"],
+        author: "zhangdx",
+        authorEmail: "zhangdxchn@gmail.com",
+        committedAt: "2026-10-30T14:47:40+08:00",
+        subject: "feat(web): register GitGraphTab as center editor tab with location bar and changes menu entry points",
+        isRemoteOnly: false,
+        refs: [],
+        files: [{ path: "apps/web/src/shell/layout/tabIcon.tsx", additions: 4, deletions: 0, hunk: "@@ -20,0 +20,4 @@\n+case 'gitGraph': return <GitGraphIcon />;" }]
+      },
+      {
+        sha: "804e746b198c61a5b4f2c009d57a2c114f6b2815",
+        shortSha: "804e746",
+        parents: ["bb0e11e4198c61a5b4f2c009d57a2c114f6b2814"],
+        author: "zhangdx",
+        authorEmail: "zhangdxchn@gmail.com",
+        committedAt: "2026-10-30T14:47:40+08:00",
+        subject: "feat(web): build GitGraphPane and GitGraphDetails with design token conformance",
+        isRemoteOnly: false,
+        refs: [],
+        files: [{ path: "apps/web/src/panels/gitGraph/GitGraphDetails.tsx", additions: 201, deletions: 0, hunk: "@@ -0,0 +1,201 @@\n+export function GitGraphDetails() {}" }]
+      },
+      {
+        sha: "bb0e11e4198c61a5b4f2c009d57a2c114f6b2814",
+        shortSha: "bb0e11e",
+        parents: ["a19be746198c61a5b4f2c009d57a2c114f6b2813"],
+        author: "zhangdx",
+        authorEmail: "zhangdxchn@gmail.com",
+        committedAt: "2026-10-30T14:47:40+08:00",
+        subject: "feat(web): implement GitGraphPane, GitGraphRowSvg and GitGraphDetails",
+        isRemoteOnly: false,
+        refs: [],
+        files: [{ path: "apps/web/src/panels/gitGraph/gitGraphModel.ts", additions: 195, deletions: 0, hunk: "@@ -0,0 +1,195 @@\n+export function computeGraphRows() {}" }]
+      },
+      {
+        sha: "a19be746198c61a5b4f2c009d57a2c114f6b2813",
+        shortSha: "a19be74",
+        parents: ["e0b29a1a198c61a5b4f2c009d57a2c114f6b2812"],
+        author: "zhangdx",
+        authorEmail: "zhangdxchn@gmail.com",
+        committedAt: "2026-10-30T14:47:40+08:00",
+        subject: "feat(web): compute git graph lanes, connections and bezier curves with semantic colors",
+        isRemoteOnly: false,
+        refs: [],
+        files: [{ path: "apps/web/src/panels/gitGraph/gitGraphModel.test.ts", additions: 132, deletions: 0, hunk: "@@ -0,0 +1,132 @@\n+test('allocates deterministic tracks');" }]
+      },
+      {
+        sha: "e0b29a1a198c61a5b4f2c009d57a2c114f6b2812",
+        shortSha: "e0b29a1",
+        parents: ["df7cb6d2198c61a5b4f2c009d57a2c114f6b2810"],
+        author: "zhangdx",
+        authorEmail: "zhangdxchn@gmail.com",
+        committedAt: "2026-10-30T14:47:40+08:00",
+        subject: "feat(contracts): define git graph types and ws protocol",
+        isRemoteOnly: false,
+        refs: [],
+        files: [{ path: "packages/contracts/src/domain.ts", additions: 26, deletions: 0, hunk: "@@ -100,0 +100,26 @@\n+export interface GitGraphCommit {}" }]
+      },
+      {
+        sha: "6b3e20d7198c61a5b4f2c009d57a2c114f6b2809",
+        shortSha: "6b3e20d",
+        parents: ["cd0bdcb6198c61a5b4f2c009d57a2c114f6b2808"],
+        author: "rsolmano",
+        authorEmail: "rinat.suleimanov@jetbrains.com",
+        committedAt: "2026-10-30T06:02:11+08:00",
+        subject: "docs(store): package rows render the host's enabled state; disabledPackages only feeds next write",
+        isRemoteOnly: true,
+        refs: [{ type: "remote", name: "upstream/pi-extension-management" }],
+        files: [{ path: "packages/server/src/host/handlers.ts", additions: 15, deletions: 2, hunk: "@@ -210,2 +210,15 @@\n+state.enabled = true;" }]
+      },
+      {
+        sha: "cd0bdcb6198c61a5b4f2c009d57a2c114f6b2808",
+        shortSha: "cd0bdcb",
+        parents: ["765034cc198c61a5b4f2c009d57a2c114f6b2807"],
+        author: "rsolmano",
+        authorEmail: "rinat.suleimanov@jetbrains.com",
+        committedAt: "2026-10-30T06:00:04+08:00",
+        subject: "fix(packages): rows carry every switch key that covers them; page renders host enabled state",
+        isRemoteOnly: true,
+        refs: [],
+        files: [{ path: "apps/web/src/panels/PackagesPanel.tsx", additions: 12, deletions: 4, hunk: "@@ -150,4 +150,12 @@\n+renderEnabledSwitch();" }]
+      },
+      {
+        sha: "765034cc198c61a5b4f2c009d57a2c114f6b2807",
+        shortSha: "765034c",
+        parents: ["d0cdb9ef198c61a5b4f2c009d57a2c114f6b2806"],
+        author: "rsolmano",
+        authorEmail: "rinat.suleimanov@jetbrains.com",
+        committedAt: "2026-10-30T05:53:19+08:00",
+        subject: "fix(packages): read pasted commands with shell quoting; close switch over pi's identity",
+        isRemoteOnly: true,
+        refs: [],
+        files: [{ path: "packages/server/src/git/git.ts", additions: 8, deletions: 1, hunk: "@@ -90,1 +90,8 @@\n+assertSafeRef(branch);" }]
+      },
+      {
+        // 关键对比提交：孤立根提交（0 父提交），用于存放 PR 审查图片物料
+        sha: "ce57ffd0bd3125855d48023ecef4082d24e81f1a",
+        shortSha: "ce57ffd",
+        parents: [], // 0 个父提交！底层的实际事实！
+        author: "rsolmano",
+        authorEmail: "rinat.suleimanov@jetbrains.com",
+        committedAt: "2026-10-30T05:41:28+08:00",
+        subject: "PR screenshots (review-only ref)",
+        isRemoteOnly: true,
+        isOrphan: true,
+        refs: [{ type: "orphan-ref", name: "upstream/assets/pi-extension-management" }],
+        files: [
+          { path: "extensions-after-expanded.png", additions: 0, deletions: 0, hunk: "@@ 纯图片静态物料 @@" },
+          { path: "extensions-after.png", additions: 0, deletions: 0, hunk: "@@ 纯图片静态物料 @@" },
+          { path: "extensions-before.png", additions: 0, deletions: 0, hunk: "@@ 纯图片静态物料 @@" },
+          { path: "install-dialog-form.png", additions: 0, deletions: 0, hunk: "@@ 纯图片静态物料 @@" },
+          { path: "install-dialog-installed.png", additions: 0, deletions: 0, hunk: "@@ 纯图片静态物料 @@" }
+        ]
+      },
+      {
+        sha: "d0cdb9ef198c61a5b4f2c009d57a2c114f6b2806",
+        shortSha: "d0cdb9e",
+        parents: ["f8fd2ca4198c61a5b4f2c009d57a2c114f6b2805"],
+        author: "rsolmano",
+        authorEmail: "rinat.suleimanov@jetbrains.com",
+        committedAt: "2026-10-30T05:33:45+08:00",
+        subject: "docs(packages): rewrite agent/packages SPEC as invariants and decisions; count pi facts",
+        isRemoteOnly: true,
+        refs: [],
+        files: [{ path: "docs/specs/packages.md", additions: 45, deletions: 12, hunk: "@@ -1,12 +1,45 @@\n+SPEC definitions" }]
+      },
+      {
+        sha: "f8fd2ca4198c61a5b4f2c009d57a2c114f6b2805",
+        shortSha: "f8fd2ca",
+        parents: ["f2a0defa198c61a5b4f2c009d57a2c114f6b2804"],
+        author: "rsolmano",
+        authorEmail: "rinat.suleimanov@jetbrains.com",
+        committedAt: "2026-10-30T05:32:02+08:00",
+        subject: "refactor(web): move package controller into usePiPackages and guard update check",
+        isRemoteOnly: true,
+        refs: [],
+        files: [{ path: "apps/web/src/hooks/usePiPackages.ts", additions: 68, deletions: 5, hunk: "@@ -10,5 +10,68 @@\n+export function usePiPackages() {}" }]
+      },
+      {
+        sha: "df7cb6d2198c61a5b4f2c009d57a2c114f6b2810",
+        shortSha: "df7cb6d",
+        parents: ["f4046641198c61a5b4f2c009d57a2c114f6b2801"],
+        author: "Rinat S",
+        authorEmail: "rinat@jetbrains.com",
+        committedAt: "2026-10-29T23:54:10+08:00",
+        subject: "feat(server): keep survey invitation away for PostHog wait period (#1034)",
+        isRemoteOnly: false,
+        refs: [{ type: "tag", name: "v0.3.0" }, { type: "branch", name: "main" }],
+        files: [{ path: "packages/server/src/survey.ts", additions: 24, deletions: 3, hunk: "@@ -12,3 +12,24 @@\n+withSurveyCooldown();" }]
+      },
+      {
+        sha: "f4046641198c61a5b4f2c009d57a2c114f6b2801",
+        shortSha: "f404664",
+        parents: ["8e85fdd3198c61a5b4f2c009d57a2c114f6b2800"],
+        author: "Rinat S",
+        authorEmail: "rinat@jetbrains.com",
+        committedAt: "2026-10-29T23:54:02+08:00",
+        subject: "feat: show in-app survey in app language from PostHog translations (#1033)",
+        isRemoteOnly: false,
+        refs: [],
+        files: [{ path: "packages/locales/en.json", additions: 18, deletions: 0, hunk: "@@ -500,0 +500,18 @@\n+\"survey.title\": \"Feedback\"" }]
+      },
+      {
+        sha: "8e85fdd3198c61a5b4f2c009d57a2c114f6b2800",
+        shortSha: "8e85fdd",
+        parents: [],
+        author: "artyomxx",
+        authorEmail: "artyom@example.com",
+        committedAt: "2026-10-29T23:20:15+08:00",
+        subject: "feat: in-app survey (#997) initial setup",
+        isRemoteOnly: false,
+        refs: [],
+        files: [{ path: "README.md", additions: 10, deletions: 0, hunk: "@@ -1,0 +1,10 @@\n+# thinkrail" }]
+      }
+    ];
+
+    const GRAPH_PALETTE = [
+      "var(--accent)",
+      "#22c55e",
+      "#f59e0b",
+      "#ec4899",
+      "#8b5cf6",
+      "#06b6d4",
+      "#3b82f6",
+      "var(--text-muted)",
+    ];
+
+    let CFG = {
+      laneWidth: 16,
+      rowHeight: 28,
+      nodeRadius: 4,
+      mergeRadius: 5.5,
+      tension: 0.75,
+    };
+
+    // 纯 TS 拓扑 DAG 算法
+    function computeGraphRows(commits) {
+      if (commits.length === 0) return [];
+      const tracks = [];
+      const rows = [];
+
+      for (let rowIndex = 0; rowIndex < commits.length; rowIndex++) {
+        const commit = commits[rowIndex];
+        if (!commit) continue;
+
+        const incomingLanes = [];
+        for (let i = 0; i < tracks.length; i++) {
+          if (tracks[i] === commit.sha) {
+            incomingLanes.push(i);
+          }
+        }
+
+        let lane;
+        const curves = [];
+
+        if (incomingLanes.length > 0) {
+          const primaryLane = incomingLanes[0] ?? 0;
+          lane = primaryLane;
+
+          for (let j = 1; j < incomingLanes.length; j++) {
+            const otherLane = incomingLanes[j];
+            if (otherLane !== undefined) {
+              curves.push({
+                fromLane: otherLane,
+                toLane: lane,
+                type: "from-top",
+                colorIndex: otherLane % GRAPH_PALETTE.length,
+              });
+              tracks[otherLane] = null;
+            }
+          }
+        } else {
+          const emptySlot = tracks.indexOf(null);
+          lane = emptySlot !== -1 ? emptySlot : tracks.length;
+          tracks[lane] = commit.sha;
+        }
+
+        const colorIndex = lane % GRAPH_PALETTE.length;
+        const isMerge = commit.parents.length > 1;
+        const hasTopStraight = incomingLanes.length > 0;
+
+        const passThroughLanes = [];
+        for (let i = 0; i < tracks.length; i++) {
+          if (i !== lane && tracks[i] !== null && !incomingLanes.includes(i)) {
+            passThroughLanes.push(i);
+          }
+        }
+
+        let hasBottomStraight = false;
+        if (commit.parents.length === 0) {
+          tracks[lane] = null;
+        } else {
+          const p0 = commit.parents[0];
+          if (p0) {
+            tracks[lane] = p0;
+            hasBottomStraight = true;
+          }
+
+          for (let pIdx = 1; pIdx < commit.parents.length; pIdx++) {
+            const pOther = commit.parents[pIdx];
+            if (!pOther) continue;
+
+            const existingTrackIndex = tracks.indexOf(pOther);
+            let targetLane;
+            if (existingTrackIndex !== -1) {
+              targetLane = existingTrackIndex;
+            } else {
+              const emptyTrack = tracks.indexOf(null);
+              targetLane = emptyTrack !== -1 ? emptyTrack : tracks.length;
+              tracks[targetLane] = pOther;
+            }
+
+            curves.push({
+              fromLane: lane,
+              toLane: targetLane,
+              type: "to-bottom",
+              colorIndex: targetLane % GRAPH_PALETTE.length,
+            });
+          }
+        }
+
+        let rowMaxLanes = lane;
+        for (const p of passThroughLanes) if (p > rowMaxLanes) rowMaxLanes = p;
+        for (const c of curves) {
+          if (c.fromLane > rowMaxLanes) rowMaxLanes = c.fromLane;
+          if (c.toLane > rowMaxLanes) rowMaxLanes = c.toLane;
+        }
+
+        rows.push({
+          commit,
+          rowIndex,
+          lane,
+          colorIndex,
+          isMerge,
+          passThroughLanes,
+          hasTopStraight,
+          hasBottomStraight,
+          curves,
+          maxLanes: Math.max(rowMaxLanes + 1, 1),
+        });
+
+        while (tracks.length > 0 && tracks[tracks.length - 1] === null) {
+          tracks.pop();
+        }
+      }
+
+      return rows;
+    }
+
+    function getBezierPath(curve, laneWidth, rowHeight, offsetX, tension) {
+      const x1 = curve.fromLane * laneWidth + offsetX;
+      const x2 = curve.toLane * laneWidth + offsetX;
+
+      if (curve.type === "from-top") {
+        const y1 = 0;
+        const y2 = rowHeight / 2;
+        const cy1 = rowHeight * (1 - tension);
+        const cy2 = rowHeight * (1 - tension);
+        return `M ${x1} ${y1} C ${x1} ${cy1}, ${x2} ${cy2}, ${x2} ${y2}`;
+      }
+
+      const y1 = rowHeight / 2;
+      const y2 = rowHeight;
+      const cy1 = rowHeight * tension;
+      const cy2 = rowHeight * tension;
+      return `M ${x1} ${y1} C ${x1} ${cy1}, ${x2} ${cy2}, ${x2} ${y2}`;
+    }
+
+    // 格式化本地时区时间（对齐 2026-10-30 05:41）
+    function formatLocalTime(isoStr) {
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return isoStr.split("T")[0];
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      return `${y}-${m}-${day} ${hh}:${mm}`;
+    }
+
+    // 渲染单行矢量 SVG
+    function renderRowSvg(row, isSelected, svgWidth) {
+      const offsetX = CFG.laneWidth / 2;
+      const x = (l) => l * CFG.laneWidth + offsetX;
+      const yCenter = CFG.rowHeight / 2;
+      const nodeColor = GRAPH_PALETTE[row.colorIndex] || "var(--accent)";
+
+      let svg = `<svg width="${svgWidth}" height="${CFG.rowHeight}" style="flex-shrink:0; overflow:hidden;" aria-hidden="true">`;
+
+      // 1. 穿透竖线
+      for (const l of row.passThroughLanes) {
+        svg += `<line x1="${x(l)}" y1="0" x2="${x(l)}" y2="${CFG.rowHeight}" stroke="${GRAPH_PALETTE[l % GRAPH_PALETTE.length]}" stroke-width="2" />`;
+      }
+
+      // 2. 向上直线
+      if (row.hasTopStraight) {
+        svg += `<line x1="${x(row.lane)}" y1="0" x2="${x(row.lane)}" y2="${yCenter}" stroke="${nodeColor}" stroke-width="2" />`;
+      }
+
+      // 3. 向下直线
+      if (row.hasBottomStraight) {
+        svg += `<line x1="${x(row.lane)}" y1="${yCenter}" x2="${x(row.lane)}" y2="${CFG.rowHeight}" stroke="${nodeColor}" stroke-width="2" />`;
+      }
+
+      // 4. 贝塞尔连接曲线
+      for (const curve of row.curves) {
+        const path = getBezierPath(curve, CFG.laneWidth, CFG.rowHeight, offsetX, CFG.tension);
+        svg += `<path d="${path}" fill="none" stroke="${GRAPH_PALETTE[curve.colorIndex]}" stroke-width="2" stroke-linecap="round" />`;
+      }
+
+      // 5. 选中高亮光晕环
+      if (isSelected) {
+        svg += `<circle cx="${x(row.lane)}" cy="${yCenter}" r="${row.isMerge ? 8 : 7}" fill="none" stroke="${nodeColor}" stroke-width="1.6" stroke-dasharray="2 2" />`;
+      }
+
+      // 6. 提交点几何图形：针对孤立根提交（0 父提交）采用微圆角方形，消除“代码画断了”的误解
+      if (row.isMerge) {
+        svg += `<circle cx="${x(row.lane)}" cy="${yCenter}" r="${CFG.mergeRadius}" fill="var(--bg)" stroke="${nodeColor}" stroke-width="2" />`;
+        svg += `<circle cx="${x(row.lane)}" cy="${yCenter}" r="2" fill="${nodeColor}" />`;
+      } else if (row.commit.parents.length === 0 && !row.hasTopStraight) {
+        // 孤立根提交（Orphan Root Marker）
+        svg += `<rect x="${x(row.lane) - CFG.nodeRadius}" y="${yCenter - CFG.nodeRadius}" width="${CFG.nodeRadius * 2}" height="${CFG.nodeRadius * 2}" rx="1.5" fill="${nodeColor}" stroke="var(--bg)" stroke-width="1.2" />`;
+      } else {
+        svg += `<circle cx="${x(row.lane)}" cy="${yCenter}" r="${CFG.nodeRadius}" fill="${nodeColor}" stroke="var(--bg)" stroke-width="1.2" />`;
+      }
+
+      svg += `</svg>`;
+      return svg;
+    }
+
+    // 应用状态
+    const state = {
+      showRemotes: true, // 核心开关：显示/隐藏远端分支
+      branchFilter: "all",
+      searchQuery: "",
+      selectedSha: "072cfee4198c61a5b4f2c009d57a2c114f6b2819",
+      selectedFileIndex: 0,
+      graphColWidth: 110,
+      descColWidth: null,
+      fullWidth: false,
+      theme: "dark",
+    };
+
+    const DOM = {
+      graphBody: document.getElementById("graph-body"),
+      colHeadGraph: document.getElementById("col-head-graph"),
+      colHeadDesc: document.getElementById("col-head-desc"),
+      resizerGraph: document.getElementById("resizer-graph"),
+      resizerDesc: document.getElementById("resizer-desc"),
+      resizerDetails: document.getElementById("resizer-details"),
+      checkShowRemotes: document.getElementById("check-show-remotes"),
+      btnToggleRemotesHud: document.getElementById("btn-toggle-remotes-hud"),
+      hudRemotesLabel: document.getElementById("hud-remotes-label"),
+      branchTrigger: document.getElementById("branch-trigger"),
+      branchMenu: document.getElementById("branch-menu"),
+      selectedBranchText: document.getElementById("selected-branch-text"),
+      searchInput: document.getElementById("search-input"),
+      searchClear: document.getElementById("search-clear"),
+      commitCounter: document.getElementById("commit-counter"),
+      detailsPanel: document.getElementById("details-panel"),
+      dSubject: document.getElementById("d-subject"),
+      dSha: document.getElementById("d-sha"),
+      dAuthor: document.getElementById("d-author"),
+      dEmail: document.getElementById("d-email"),
+      dDate: document.getElementById("d-date"),
+      dParents: document.getElementById("d-parents"),
+      detailsFilesList: document.getElementById("details-files-list"),
+      detailsDiffPreview: document.getElementById("details-diff-preview"),
+      btnCloseDetails: document.getElementById("btn-close-details"),
+      rightPanel: document.getElementById("right-panel"),
+      btnToggleLayout: document.getElementById("btn-toggle-layout"),
+      layoutLabel: document.getElementById("layout-label"),
+      btnExpandPanel: document.getElementById("btn-expand-panel"),
+      btnToggleTheme: document.getElementById("btn-toggle-theme"),
+      themeLabel: document.getElementById("theme-label"),
+      btnOpenTweaks: document.getElementById("btn-open-tweaks"),
+      tweaksPanel: document.getElementById("tweaks-panel"),
+      btnCloseTweaks: document.getElementById("btn-close-tweaks"),
+    };
+
+    function getActiveCommits() {
+      let list = ALL_COMMITS;
+      // 核心过滤：若未勾选「显示远端分支」，剔除所有纯远端物料分支
+      if (!state.showRemotes) {
+        list = list.filter(c => !c.isRemoteOnly);
+      }
+      // 分支下拉过滤
+      if (state.branchFilter === "current") {
+        list = list.filter(c => !c.isOrphan && (!c.isRemoteOnly || c.sha === "df7cb6d2198c61a5b4f2c009d57a2c114f6b2810"));
+      } else if (state.branchFilter !== "all") {
+        list = list.filter(c => c.refs.some(r => r.name.includes(state.branchFilter)));
+      }
+      return list;
+    }
+
+    function renderRefBadges(refs) {
+      if (!refs || refs.length === 0) return "";
+      return refs.map(r => {
+        let cls = `ref-badge ${r.type}`;
+        if (r.current) cls += " current";
+        let icon = "";
+        if (r.type === "head") icon = `<span style="display:inline-block; width:5px; height:5px; border-radius:50%; background:#34d399;"></span>`;
+        else if (r.type === "orphan-ref") icon = `<span>📷</span>`;
+        return `<span class="${cls}">${icon}${r.name}</span>`;
+      }).join("");
+    }
+
+    function render() {
+      const activeCommits = getActiveCommits();
+      const rows = computeGraphRows(activeCommits);
+
+      // 计算防止曲线溢出到描述列的保底自适应宽度
+      let maxL = 1;
+      for (const r of rows) if (r.maxLanes > maxL) maxL = r.maxLanes;
+      const minGraphWidth = Math.max(80, maxL * CFG.laneWidth + 16);
+      const effectiveGraphWidth = Math.max(state.graphColWidth, minGraphWidth);
+
+      DOM.colHeadGraph.style.width = `${effectiveGraphWidth}px`;
+
+      const q = state.searchQuery.toLowerCase().trim();
+      let visibleCount = 0;
+
+      const html = rows.map(row => {
+        const c = row.commit;
+        const isSelected = c.sha === state.selectedSha;
+
+        let matches = true;
+        if (q) {
+          matches = c.subject.toLowerCase().includes(q) ||
+                    c.shortSha.toLowerCase().includes(q) ||
+                    c.author.toLowerCase().includes(q);
+        }
+        if (matches) visibleCount++;
+
+        return `
+          <div class="graph-row ${isSelected ? 'selected' : ''} ${!matches ? 'style=\"display:none;\"' : ''}"
+               data-sha="${c.sha}" style="height:${CFG.rowHeight}px;">
+            <div class="cell-graph" style="width:${effectiveGraphWidth}px;">
+              ${renderRowSvg(row, isSelected, effectiveGraphWidth)}
+            </div>
+            <div class="cell-desc" style="${state.descColWidth ? `width:${state.descColWidth}px; flex:none;` : ''}">
+              ${renderRefBadges(c.refs)}
+              <span class="commit-subject" title="${c.subject}">${c.subject}</span>
+            </div>
+            <div class="cell-author" title="${c.author}">${c.author}</div>
+            <div class="cell-date">${formatLocalTime(c.committedAt)}</div>
+            <div class="cell-sha">${c.shortSha}</div>
+          </div>
+        `;
+      }).join("");
+
+      DOM.graphBody.innerHTML = html;
+      DOM.commitCounter.textContent = `${visibleCount} 个提交${!state.showRemotes ? ' (已隐藏远端物料)' : ''}`;
+
+      DOM.graphBody.querySelectorAll(".graph-row").forEach(el => {
+        el.addEventListener("click", () => {
+          selectCommit(el.getAttribute("data-sha"));
+        });
+      });
+    }
+
+    function selectCommit(sha) {
+      state.selectedSha = sha;
+      state.selectedFileIndex = 0;
+      const commit = ALL_COMMITS.find(c => c.sha === sha);
+      if (!commit) return;
+
+      DOM.detailsPanel.style.display = "flex";
+      DOM.dSubject.textContent = commit.subject;
+      DOM.dSha.textContent = commit.shortSha;
+      DOM.dAuthor.textContent = commit.author;
+      DOM.dEmail.textContent = commit.authorEmail;
+      DOM.dDate.textContent = formatLocalTime(commit.committedAt);
+
+      if (commit.parents.length === 0) {
+        DOM.dParents.innerHTML = `<span class="root-tag-hint">(根提交 · 无父提交 · 孤立物料快照)</span>`;
+      } else {
+        DOM.dParents.innerHTML = commit.parents.map(p => {
+          const short = p.slice(0, 7);
+          return `<span class="parent-tag" data-parent-sha="${p}" title="跳转至父提交 ${short}">${short}</span>`;
+        }).join(" ");
+      }
+
+      DOM.dParents.querySelectorAll(".parent-tag").forEach(tag => {
+        tag.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const pSha = tag.getAttribute("data-parent-sha");
+          selectCommit(pSha);
+          const targetRow = DOM.graphBody.querySelector(`.graph-row[data-sha="${pSha}"]`);
+          if (targetRow) targetRow.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        });
+      });
+
+      renderFilesList(commit);
+      render();
+    }
+
+    function renderFilesList(commit) {
+      if (!commit.files || commit.files.length === 0) {
+        DOM.detailsFilesList.innerHTML = `<div style="padding:10px; color:var(--text-dim); font-size:11px;">无变更文件</div>`;
+        DOM.detailsDiffPreview.innerHTML = `<div>无差异内容</div>`;
+        return;
+      }
+
+      const filesHtml = commit.files.map((f, idx) => {
+        const isActive = idx === state.selectedFileIndex;
+        const name = f.path.split("/").pop();
+        return `
+          <div class="file-change-item ${isActive ? 'active' : ''}" data-file-idx="${idx}" title="${f.path}">
+            <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:170px;">${name}</span>
+            <div class="diff-stat">
+              ${f.additions ? `<span class="diff-add">+${f.additions}</span>` : ''}
+              ${f.deletions ? `<span class="diff-del">-${f.deletions}</span>` : ''}
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      DOM.detailsFilesList.innerHTML = filesHtml;
+
+      DOM.detailsFilesList.querySelectorAll(".file-change-item").forEach(item => {
+        item.addEventListener("click", () => {
+          state.selectedFileIndex = Number(item.getAttribute("data-file-idx"));
+          renderFilesList(commit);
+        });
+      });
+
+      const curFile = commit.files[state.selectedFileIndex] || commit.files[0];
+      if (curFile) {
+        const diffLines = (curFile.hunk || "").split("\n").map(l => {
+          let cls = "diff-line";
+          if (l.startsWith("+")) cls += " add";
+          else if (l.startsWith("-")) cls += " del";
+          else if (l.startsWith("@")) cls += " hunk";
+          return `<div class="${cls}">${escapeHtml(l)}</div>`;
+        }).join("");
+
+        DOM.detailsDiffPreview.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border); padding-bottom:4px; margin-bottom:8px; color:var(--text);">
+            <span>📄 ${curFile.path}</span>
+            <span style="font-size:10px; color:var(--accent);">就地审查 Diff</span>
+          </div>
+          ${diffLines}
+        `;
+      }
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    // 拖拽列宽控制
+    function setupResizing() {
+      // 图谱列分隔把手
+      DOM.resizerGraph.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        DOM.resizerGraph.setPointerCapture(e.pointerId);
+        DOM.resizerGraph.classList.add("dragging");
+        const startX = e.clientX;
+        const startW = DOM.colHeadGraph.getBoundingClientRect().width;
+
+        function onMove(me) {
+          const delta = me.clientX - startX;
+          const nextW = Math.max(80, Math.min(1000, Math.round(startW + delta)));
+          state.graphColWidth = nextW;
+          render();
+        }
+        function onUp(ue) {
+          DOM.resizerGraph.releasePointerCapture(ue.pointerId);
+          DOM.resizerGraph.classList.remove("dragging");
+          window.removeEventListener("pointermove", onMove);
+          window.removeEventListener("pointerup", onUp);
+        }
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+      });
+
+      DOM.resizerGraph.addEventListener("dblclick", () => {
+        state.graphColWidth = 110;
+        render();
+      });
+
+      // 描述列分隔把手
+      DOM.resizerDesc.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        DOM.resizerDesc.setPointerCapture(e.pointerId);
+        DOM.resizerDesc.classList.add("dragging");
+        const startX = e.clientX;
+        const startW = state.descColWidth ?? DOM.colHeadDesc.getBoundingClientRect().width;
+
+        function onMove(me) {
+          const delta = me.clientX - startX;
+          const nextW = Math.max(160, Math.min(1800, Math.round(startW + delta)));
+          state.descColWidth = nextW;
+          render();
+        }
+        function onUp(ue) {
+          DOM.resizerDesc.releasePointerCapture(ue.pointerId);
+          DOM.resizerDesc.classList.remove("dragging");
+          window.removeEventListener("pointermove", onMove);
+          window.removeEventListener("pointerup", onUp);
+        }
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+      });
+
+      DOM.resizerDesc.addEventListener("dblclick", () => {
+        state.descColWidth = null;
+        render();
+      });
+    }
+
+    // 远端分支切换交互（核心功能）
+    function toggleRemoteBranches(enabled) {
+      state.showRemotes = enabled;
+      DOM.checkShowRemotes.checked = enabled;
+      DOM.hudRemotesLabel.textContent = enabled ? "远端分支: 显示中 (含 ce57ffd)" : "远端分支: 已隐藏 (纯净主干 0 孤立点)";
+      DOM.btnToggleRemotesHud.classList.toggle("active", enabled);
+      render();
+    }
+
+    DOM.checkShowRemotes.addEventListener("change", (e) => {
+      toggleRemoteBranches(e.target.checked);
+    });
+    DOM.btnToggleRemotesHud.addEventListener("click", () => {
+      toggleRemoteBranches(!state.showRemotes);
+    });
+
+    // 搜索与分支下拉
+    DOM.searchInput.addEventListener("input", (e) => {
+      state.searchQuery = e.target.value;
+      DOM.searchClear.style.display = state.searchQuery ? "flex" : "none";
+      render();
+    });
+    DOM.searchClear.addEventListener("click", () => {
+      state.searchQuery = "";
+      DOM.searchInput.value = "";
+      DOM.searchClear.style.display = "none";
+      render();
+      DOM.searchInput.focus();
+    });
+
+    DOM.branchTrigger.addEventListener("click", (e) => {
+      e.stopPropagation();
+      DOM.branchMenu.classList.toggle("show");
+    });
+    DOM.branchMenu.querySelectorAll(".branch-option").forEach(opt => {
+      opt.addEventListener("click", (e) => {
+        e.stopPropagation();
+        state.branchFilter = opt.getAttribute("data-branch");
+        DOM.selectedBranchText.textContent = opt.textContent.split(" ")[0];
+        DOM.branchMenu.querySelectorAll(".branch-option").forEach(o => o.classList.remove("selected"));
+        opt.classList.add("selected");
+        DOM.branchMenu.classList.remove("show");
+        render();
+      });
+    });
+
+    window.addEventListener("click", () => {
+      DOM.branchMenu.classList.remove("show");
+      DOM.tweaksPanel.classList.remove("show");
+    });
+
+    DOM.btnCloseDetails.addEventListener("click", () => {
+      DOM.detailsPanel.style.display = "none";
+    });
+
+    // 全屏展开切换
+    function toggleLayout() {
+      state.fullWidth = !state.fullWidth;
+      DOM.rightPanel.classList.toggle("full-width", state.fullWidth);
+      DOM.layoutLabel.textContent = state.fullWidth ? "恢复分栏" : "全屏展开";
+    }
+    DOM.btnToggleLayout.addEventListener("click", toggleLayout);
+    DOM.btnExpandPanel.addEventListener("click", toggleLayout);
+
+    // 主题切换
+    const THEMES = ["dark", "light", "mist"];
+    DOM.btnToggleTheme.addEventListener("click", () => {
+      const idx = THEMES.indexOf(state.theme);
+      state.theme = THEMES[(idx + 1) % THEMES.length];
+      document.documentElement.className = state.theme === "dark" ? "dark" : "";
+      document.documentElement.setAttribute("data-theme", state.theme);
+      DOM.themeLabel.textContent = state.theme === "dark" ? "浅色模式" : state.theme === "light" ? "Mist 模式" : "暗色模式";
+      render();
+    });
+
+    // 实时调参面板
+    DOM.btnOpenTweaks.addEventListener("click", (e) => {
+      e.stopPropagation();
+      DOM.tweaksPanel.classList.toggle("show");
+    });
+    DOM.btnCloseTweaks.addEventListener("click", () => DOM.tweaksPanel.classList.remove("show"));
+    DOM.tweaksPanel.addEventListener("click", (e) => e.stopPropagation());
+
+    document.getElementById("tweak-row-height").addEventListener("input", (e) => {
+      CFG.rowHeight = Number(e.target.value);
+      document.getElementById("val-row-height").textContent = `${CFG.rowHeight}px`;
+      render();
+    });
+    document.getElementById("tweak-lane-width").addEventListener("input", (e) => {
+      CFG.laneWidth = Number(e.target.value);
+      document.getElementById("val-lane-width").textContent = `${CFG.laneWidth}px`;
+      render();
+    });
+    document.getElementById("tweak-node-radius").addEventListener("input", (e) => {
+      CFG.nodeRadius = Number(e.target.value);
+      document.getElementById("val-node-radius").textContent = `${CFG.nodeRadius}px`;
+      render();
+    });
+
+    // 初始化
+    setupResizing();
+    selectCommit(state.selectedSha);
+    render();
+  </script>
+</body>
+</html>

@@ -1,0 +1,1922 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pi-Web Git Graph Prototype · 高保真交互原型</title>
+  <style>
+    /* -------------------------------------------------------------
+       1. Pi-Web Design Tokens & CSS Variables (1:1 还原 app/globals.css)
+       ------------------------------------------------------------- */
+    :root, html[data-theme="light"] {
+      color-scheme: light;
+      --bg: #ffffff;
+      --bg-panel: #f5f5f5;
+      --bg-hover: #eeeeee;
+      --bg-selected: #e8e8e8;
+      --border: #e0e0e0;
+      --text: #1a1a1a;
+      --text-muted: #515c6b;
+      --text-dim: #5e6673;
+      --accent: #245bce;
+      --accent-hover: #1d4ed8;
+      --accent-contrast: #ffffff;
+      --user-bg: #eff6ff;
+      --assistant-bg: #ffffff;
+      --tool-bg: #f9fafb;
+      --bg-subtle: rgba(0,0,0,0.03);
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    html.dark, html[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #1a1a1a;
+      --bg-panel: #242424;
+      --bg-hover: #2e2e2e;
+      --bg-selected: #383838;
+      --border: #454545;
+      --text: #e8e8e8;
+      --text-muted: #b7b7b7;
+      --text-dim: #a4a4a4;
+      --accent: #a4c2f4;
+      --accent-hover: #c3d8fa;
+      --accent-contrast: #182234;
+      --user-bg: #292929;
+      --assistant-bg: #1a1a1a;
+      --tool-bg: #222222;
+      --bg-subtle: rgba(255,255,255,0.04);
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    html[data-theme="mist"] {
+      color-scheme: light;
+      --bg: #f4f8f7;
+      --bg-panel: #e9f0ee;
+      --bg-hover: #e0eae7;
+      --bg-selected: #d7e4df;
+      --border: #afc4ba;
+      --text: #202e2b;
+      --text-muted: #455f56;
+      --text-dim: #52685f;
+      --accent: #1e6559;
+      --accent-hover: #174f46;
+      --accent-contrast: #ffffff;
+      --user-bg: #e0efeb;
+      --assistant-bg: #f4f8f7;
+      --tool-bg: #ecf3f0;
+      --bg-subtle: rgba(24,65,50,0.04);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* -------------------------------------------------------------
+       2. Designer Assumptions HUD Bar (Huashu Junior Designer Pass)
+       ------------------------------------------------------------- */
+    .designer-hud {
+      background: #111418;
+      color: #9cb1cc;
+      border-bottom: 1px solid #232d3d;
+      padding: 7px 16px;
+      font-size: 11.5px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      z-index: 100;
+    }
+    .designer-hud strong {
+      color: #e2edfd;
+      font-weight: 600;
+    }
+    .hud-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: #192230;
+      border: 1px solid #28374d;
+      color: #64b5f6;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 10.5px;
+      font-family: var(--font-mono);
+    }
+    .hud-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .hud-btn {
+      background: #1c2636;
+      border: 1px solid #2f415c;
+      color: #c9daf8;
+      border-radius: 4px;
+      padding: 3px 9px;
+      font-size: 11px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s;
+    }
+    .hud-btn:hover {
+      background: #27374d;
+      color: #ffffff;
+      border-color: #4a638a;
+    }
+    .hud-btn.active {
+      background: var(--accent);
+      color: var(--accent-contrast);
+      border-color: var(--accent);
+    }
+
+    /* -------------------------------------------------------------
+       3. Main App Layout (Shell, Sidebar, Center Chat, Right Panel)
+       ------------------------------------------------------------- */
+    .app-root {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+      position: relative;
+    }
+
+    /* Sidebar Mock (Left) */
+    .sidebar-mock {
+      width: 250px;
+      background: var(--bg-panel);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      transition: width 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .sidebar-header {
+      height: 38px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .sidebar-worktree-box {
+      margin: 8px 10px 4px;
+      padding: 6px 9px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--text);
+    }
+    .sidebar-actions-strip {
+      padding: 4px 10px 8px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      border-bottom: 1px solid var(--border);
+    }
+    .action-icon-btn {
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    .action-icon-btn:hover {
+      background: var(--bg-hover);
+      color: var(--text);
+    }
+    .action-icon-btn.active {
+      background: var(--bg-selected);
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    .sidebar-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px;
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+    .sidebar-item {
+      padding: 5px 8px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+    .sidebar-item:hover {
+      background: var(--bg-hover);
+      color: var(--text);
+    }
+    .sidebar-item.selected {
+      background: var(--bg-selected);
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    /* Center Chat Area */
+    .center-chat {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+      min-width: 0;
+      position: relative;
+    }
+    .chat-header {
+      height: 38px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      font-size: 12px;
+      color: var(--text-muted);
+      background: var(--bg-panel);
+    }
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .chat-bubble {
+      max-width: 680px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .chat-bubble.user {
+      align-self: flex-end;
+      background: var(--user-bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .chat-bubble.assistant {
+      align-self: flex-start;
+      background: var(--assistant-bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    /* -------------------------------------------------------------
+       4. Right Panel (The Target Git Graph Host Tab)
+       ------------------------------------------------------------- */
+    .right-panel {
+      width: 620px;
+      border-left: 1px solid var(--border);
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      min-width: 360px;
+      position: relative;
+      transition: width 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .right-panel.full-width {
+      position: absolute;
+      left: 250px;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      width: auto !important;
+      z-index: 50;
+      border-left: none;
+    }
+
+    /* Right Panel TabBar */
+    .panel-tabbar {
+      height: 36px;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: stretch;
+      overflow-x: auto;
+      flex-shrink: 0;
+    }
+    .panel-tab {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+      border-right: 1px solid var(--border);
+      cursor: pointer;
+      background: var(--bg-panel);
+      white-space: nowrap;
+    }
+    .panel-tab:hover {
+      color: var(--text);
+      background: var(--bg-hover);
+    }
+    .panel-tab.active {
+      color: var(--text);
+      background: var(--bg);
+      font-weight: 500;
+    }
+    .tabbar-spacer {
+      flex: 1;
+    }
+    .tabbar-action-btn {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      border-left: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+    .tabbar-action-btn:hover {
+      color: var(--accent);
+      background: var(--bg-hover);
+    }
+
+    /* -------------------------------------------------------------
+       5. Git Graph Component Core Styling
+       ------------------------------------------------------------- */
+    .git-graph-view {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      background: var(--bg);
+    }
+
+    /* Git Graph Toolbar */
+    .graph-toolbar {
+      height: 36px;
+      padding: 0 8px 0 10px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg);
+      flex-shrink: 0;
+    }
+    .branch-dropdown {
+      position: relative;
+    }
+    .branch-trigger {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      height: 24px;
+      padding: 0 8px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 11px;
+      color: var(--text);
+      cursor: pointer;
+    }
+    .branch-trigger:hover {
+      background: var(--bg-hover);
+    }
+    .branch-menu {
+      position: absolute;
+      top: 28px;
+      left: 0;
+      width: 210px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+      z-index: 200;
+      padding: 4px;
+      display: none;
+    }
+    .branch-menu.show {
+      display: block;
+    }
+    .branch-option {
+      padding: 5px 8px;
+      border-radius: 4px;
+      font-size: 11.5px;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+    .branch-option:hover {
+      background: var(--bg-hover);
+      color: var(--accent);
+    }
+    .branch-option.selected {
+      background: var(--bg-selected);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .search-box-wrap {
+      position: relative;
+      flex: 1;
+      max-width: 280px;
+    }
+    .search-box-wrap svg {
+      position: absolute;
+      left: 7px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-dim);
+      pointer-events: none;
+    }
+    .search-input {
+      width: 100%;
+      height: 24px;
+      padding: 0 22px 0 24px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      outline: none;
+    }
+    .search-input:focus {
+      border-color: var(--accent);
+      background: var(--bg);
+    }
+    .search-clear {
+      position: absolute;
+      right: 4px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 16px;
+      height: 16px;
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      border-radius: 2px;
+    }
+    .search-clear:hover {
+      color: var(--text);
+      background: var(--bg-hover);
+    }
+
+    .toolbar-commit-count {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-left: auto;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Table Column Header */
+    .graph-header {
+      height: 26px;
+      display: flex;
+      align-items: center;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--text-dim);
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    .col-header {
+      position: relative;
+      padding: 0 8px;
+      display: flex;
+      align-items: center;
+      height: 100%;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+    .col-resizer {
+      position: absolute;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      width: 6px;
+      cursor: col-resize;
+      z-index: 10;
+    }
+    .col-resizer:hover, .col-resizer.dragging {
+      background: var(--accent);
+    }
+
+    /* Virtual Scroll List & Rows */
+    .graph-body {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      min-height: 0;
+      position: relative;
+    }
+    .graph-row {
+      display: flex;
+      align-items: center;
+      height: 28px;
+      box-sizing: border-box;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      font-size: 12px;
+      background: var(--bg);
+      transition: background 0.08s;
+    }
+    .graph-row:hover {
+      background: var(--bg-hover);
+    }
+    .graph-row.selected {
+      background: var(--bg-selected);
+    }
+    .graph-row.filtered-out {
+      display: none;
+    }
+
+    .cell-graph {
+      flex-shrink: 0;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      overflow: visible;
+    }
+    .cell-desc {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 8px;
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .commit-subject {
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+      font-size: 12px;
+    }
+    .cell-author {
+      width: 120px;
+      flex-shrink: 0;
+      padding: 0 8px;
+      color: var(--text-muted);
+      font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .cell-date {
+      width: 105px;
+      flex-shrink: 0;
+      padding: 0 8px;
+      color: var(--text-dim);
+      font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+    .cell-sha {
+      width: 70px;
+      flex-shrink: 0;
+      padding: 0 8px;
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: var(--text-dim);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Ref Badges */
+    .ref-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 10.5px;
+      line-height: 14px;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    .ref-badge.head {
+      background: #064e3b;
+      color: #6ee7b7;
+      border: 1px solid #047857;
+    }
+    .ref-badge.branch {
+      background: var(--bg-panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .ref-badge.branch.current {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--bg-selected);
+    }
+    .ref-badge.tag {
+      background: #451a03;
+      color: #fcd34d;
+      border: 1px solid #78350f;
+    }
+    .ref-badge.remote {
+      background: transparent;
+      color: var(--text-dim);
+      border: 1px dashed var(--border);
+      font-style: italic;
+    }
+
+    /* -------------------------------------------------------------
+       6. Git Graph Bottom Details Inspector
+       ------------------------------------------------------------- */
+    .graph-details-panel {
+      border-top: 1px solid var(--border);
+      background: var(--bg-panel);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      max-height: 250px;
+      min-height: 140px;
+      height: 190px;
+      position: relative;
+    }
+    .details-resizer {
+      position: absolute;
+      top: -3px;
+      left: 0;
+      right: 0;
+      height: 6px;
+      cursor: row-resize;
+      z-index: 10;
+    }
+    .details-resizer:hover {
+      background: var(--accent);
+    }
+    .details-header {
+      padding: 8px 12px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .details-title-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .details-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .details-sha-pill {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 1px 6px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+    .details-sha-pill:hover {
+      border-color: var(--accent);
+      color: var(--text);
+    }
+    .details-meta-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 3px;
+    }
+    .parent-tag {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      padding: 0 5px;
+      border-radius: 3px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--accent);
+      cursor: pointer;
+      text-decoration: underline;
+    }
+
+    .details-content {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+    .files-list-col {
+      width: 240px;
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      padding: 4px;
+      flex-shrink: 0;
+    }
+    .file-change-item {
+      padding: 4px 8px;
+      font-size: 11.5px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      color: var(--text);
+    }
+    .file-change-item:hover {
+      background: var(--bg-hover);
+    }
+    .file-change-item.active {
+      background: var(--bg-selected);
+      color: var(--accent);
+      font-weight: 500;
+    }
+    .diff-stat {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      display: flex;
+      gap: 4px;
+    }
+    .diff-add { color: #22c55e; }
+    .diff-del { color: #ef4444; }
+
+    .diff-preview-col {
+      flex: 1;
+      padding: 8px 12px;
+      overflow-y: auto;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      line-height: 1.5;
+      background: var(--bg);
+      color: var(--text-muted);
+    }
+    .diff-line {
+      white-space: pre-wrap;
+    }
+    .diff-line.add {
+      background: rgba(34, 197, 94, 0.12);
+      color: #22c55e;
+    }
+    .diff-line.del {
+      background: rgba(239, 68, 68, 0.12);
+      color: #ef4444;
+    }
+    .diff-line.hunk {
+      color: var(--accent);
+      opacity: 0.8;
+    }
+
+    /* -------------------------------------------------------------
+       7. Tweaks Overlay Modal (Live Tuning)
+       ------------------------------------------------------------- */
+    .tweaks-panel {
+      position: absolute;
+      top: 45px;
+      right: 20px;
+      width: 280px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+      z-index: 500;
+      padding: 12px;
+      font-size: 11.5px;
+      display: none;
+    }
+    .tweaks-panel.show {
+      display: block;
+    }
+    .tweaks-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .tweaks-slider {
+      width: 120px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Designer HUD / Control Strip -->
+  <header class="designer-hud">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <strong>Huashu Design · Git Graph Interactive Mockup</strong>
+      <span class="hud-badge">ZERO-DEP DAG · 28px ROW · CUBIC BEZIER</span>
+      <span style="font-size:11px; color:#6b829e;">(源自 ThinkRail 原生拓扑引擎)</span>
+    </div>
+    <div class="hud-controls">
+      <button class="hud-btn" id="btn-toggle-layout" title="切换右侧分栏与全屏展开模式">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/></svg>
+        <span id="layout-label">全屏展开</span>
+      </button>
+      <button class="hud-btn" id="btn-toggle-theme">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+        <span id="theme-label">浅色模式</span>
+      </button>
+      <button class="hud-btn" id="btn-open-tweaks">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
+        <span>实时调参 (Tweaks)</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <div class="app-root">
+
+    <!-- 1. Left Sidebar Simulation (pi-web SessionSidebar) -->
+    <aside class="sidebar-mock">
+      <div class="sidebar-header">
+        <span>Workspaces</span>
+        <span style="font-size:11px; color:var(--text-dim);">pi-web</span>
+      </div>
+      <div class="sidebar-worktree-box">
+        <span style="display:flex; align-items:center; gap:4px; font-weight:500;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9"/></svg>
+          feat/git-graph
+        </span>
+        <span style="color:var(--text-dim); font-size:10px;">main worktree</span>
+      </div>
+      <div class="sidebar-actions-strip">
+        <button class="action-icon-btn" title="终端 (Terminal)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        </button>
+        <button class="action-icon-btn" title="刷新文件">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        </button>
+        <button class="action-icon-btn active" id="btn-sidebar-git-graph" title="Git Graph 图谱 (本功能入口)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="9" r="3"/><path d="M6 9v6M18 12a9 9 0 0 1-9 9"/></svg>
+        </button>
+      </div>
+      <div class="sidebar-list">
+        <div style="font-size:10px; color:var(--text-dim); padding:4px 6px; text-transform:uppercase;">Sessions</div>
+        <div class="sidebar-item selected">
+          <span style="color:var(--accent);">●</span>
+          <span>实现 Git Graph 功能集成</span>
+        </div>
+        <div class="sidebar-item">
+          <span style="color:var(--text-dim);">○</span>
+          <span>修复 RPC Manager 内存泄露</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 2. Center Chat Area Simulation -->
+    <main class="center-chat">
+      <div class="chat-header">
+        <span>Session · 实现 Git Graph 功能集成</span>
+        <span style="font-size:11px;">Claude 3.7 Sonnet (Thinking)</span>
+      </div>
+      <div class="chat-messages">
+        <div class="chat-bubble user">
+          根据 /tmp/handoff-git-graph-pi-web.md，如何在本项目支持 git-graph 的功能？/skill:huashu-design 画出原型。
+        </div>
+        <div class="chat-bubble assistant">
+          已按照 <strong>Huashu-Design</strong> 视觉规范完成原型推导！
+          <br><br>
+          在右侧面板以<strong>一等公民标签页</strong>呈现完整矢量拓扑：
+          <ul style="margin-left:16px; margin-top:6px; line-height:1.6;">
+            <li>✨ 零依赖纯 TS 拓扑 DAG 计算（ThinkRail 算法）</li>
+            <li>🌿 28px 固定行高平滑贝塞尔曲线道岔</li>
+            <li>🔍 响应式宽幅搜索 + 分支过滤器</li>
+            <li>↔ 可拖拽调节图谱宽度与描述列宽（支持双击重置）</li>
+            <li>📋 底部可折叠 Commit 详情抽屉，直接穿透跳转文件 Diff！</li>
+          </ul>
+        </div>
+      </div>
+    </main>
+
+    <!-- 3. Right Panel: The Git Graph Host Tab -->
+    <section class="right-panel" id="right-panel">
+      <!-- TabBar Header -->
+      <div class="panel-tabbar">
+        <div class="panel-tab">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <span>lib/git-graph.ts</span>
+        </div>
+        <div class="panel-tab active" id="tab-git-graph">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" color="var(--accent)"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="9" r="3"/><path d="M6 9v6M18 12a9 9 0 0 1-9 9"/></svg>
+          <span style="font-weight:600; color:var(--text);">Git Graph</span>
+        </div>
+        <div class="panel-tab">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          <span>term: bash</span>
+        </div>
+        <div class="tabbar-spacer"></div>
+        <button class="tabbar-action-btn" id="btn-expand-panel" title="全屏展开 / 恢复分栏 (files.expandPanel)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M3 3l6 6m12-6-6 6M3 21l6-6m12 6-6-6"/></svg>
+        </button>
+        <button class="tabbar-action-btn" title="隐藏面板">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="15" y1="3" x2="15" y2="21" /></svg>
+        </button>
+      </div>
+
+      <!-- Git Graph Core View -->
+      <div class="git-graph-view">
+        
+        <!-- Toolbar -->
+        <div class="graph-toolbar">
+          <!-- Branch Dropdown -->
+          <div class="branch-dropdown">
+            <button class="branch-trigger" id="branch-trigger">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="9" r="3"/><path d="M6 9v6M18 12a9 9 0 0 1-9 9"/></svg>
+              <span id="selected-branch-text">全部分支</span>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <div class="branch-menu" id="branch-menu">
+              <div class="branch-option selected" data-branch="all">全部分支 (All Branches)</div>
+              <div class="branch-option" data-branch="feat/git-graph">feat/git-graph (当前分支)</div>
+              <div class="branch-option" data-branch="main">main</div>
+              <div class="branch-option" data-branch="fix/subagent-isolation">fix/subagent-isolation</div>
+            </div>
+          </div>
+
+          <!-- Search Box -->
+          <div class="search-box-wrap">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" class="search-input" id="search-input" placeholder="搜索提交 (信息, SHA, 作者)…">
+            <button class="search-clear" id="search-clear" title="清空搜索">✕</button>
+          </div>
+
+          <!-- Commit Counter -->
+          <span class="toolbar-commit-count" id="commit-counter">12 个提交</span>
+        </div>
+
+        <!-- Sticky Table Header -->
+        <div class="graph-header" id="graph-header">
+          <div class="col-header" id="col-head-graph" style="width: 100px;">
+            <span>图谱</span>
+            <div class="col-resizer" id="resizer-graph" title="拖拽调整宽度，双击重置"></div>
+          </div>
+          <div class="col-header" id="col-head-desc" style="flex: 1; min-width: 160px;">
+            <span>描述</span>
+            <div class="col-resizer" id="resizer-desc" title="拖拽调整宽度，双击重置"></div>
+          </div>
+          <div class="col-header" style="width: 120px;">作者</div>
+          <div class="col-header" style="width: 105px;">日期</div>
+          <div class="col-header" style="width: 70px;">SHA</div>
+        </div>
+
+        <!-- Virtualized Commit Rows Container -->
+        <div class="graph-body" id="graph-body">
+          <!-- Dynamically injected rows -->
+        </div>
+
+        <!-- Collapsible Commit Inspector Details Drawer -->
+        <div class="graph-details-panel" id="details-panel">
+          <div class="details-resizer" id="resizer-details" title="拖拽调整详情抽屉高度"></div>
+          <div class="details-header">
+            <div style="min-width:0; flex:1;">
+              <div class="details-title-row">
+                <span class="details-title" id="d-subject">feat(git-graph): add interactive topology visualization</span>
+                <span class="details-sha-pill" id="d-sha" title="点击复制完整 SHA">7a8f92b</span>
+              </div>
+              <div class="details-meta-row">
+                <span>作者: <strong id="d-author" style="color:var(--text);">zhangdx</strong> (<span id="d-email">zhangdx@example.com</span>)</span>
+                <span>•</span>
+                <span id="d-date">2026-04-20 18:24:10</span>
+                <span>•</span>
+                <span>父提交: <span id="d-parents"></span></span>
+              </div>
+            </div>
+            <button id="btn-close-details" style="background:none; border:none; color:var(--text-dim); cursor:pointer; padding:2px 4px;" title="关闭详情">✕</button>
+          </div>
+
+          <div class="details-content">
+            <!-- Files List -->
+            <div class="files-list-col" id="details-files-list">
+              <!-- Dynamically populated files -->
+            </div>
+            <!-- Diff Preview -->
+            <div class="diff-preview-col" id="details-diff-preview">
+              <!-- Dynamically populated diff -->
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Live Tweaks Floating Drawer -->
+  <div class="tweaks-panel" id="tweaks-panel">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; font-weight:600;">
+      <span>🎛️ Git Graph 实时调参</span>
+      <button id="btn-close-tweaks" style="background:none; border:none; color:var(--text-dim); cursor:pointer;">✕</button>
+    </div>
+    <div class="tweaks-row">
+      <span>行高 (Row Height)</span>
+      <input type="range" class="tweaks-slider" id="tweak-row-height" min="22" max="38" value="28">
+      <span id="val-row-height">28px</span>
+    </div>
+    <div class="tweaks-row">
+      <span>轨道宽度 (Lane Width)</span>
+      <input type="range" class="tweaks-slider" id="tweak-lane-width" min="12" max="24" value="16">
+      <span id="val-lane-width">16px</span>
+    </div>
+    <div class="tweaks-row">
+      <span>节点半径 (Node Radius)</span>
+      <input type="range" class="tweaks-slider" id="tweak-node-radius" min="3" max="7" value="4">
+      <span id="val-node-radius">4px</span>
+    </div>
+    <div class="tweaks-row">
+      <span>贝塞尔张力 (Curve Tension)</span>
+      <input type="range" class="tweaks-slider" id="tweak-tension" min="10" max="90" value="75">
+      <span id="val-tension">0.75</span>
+    </div>
+  </div>
+
+  <!-- -------------------------------------------------------------
+       8. Core JavaScript Engine (DAG Topology + UI Reactive Engine)
+       ------------------------------------------------------------- -->
+  <script>
+    // --- 1. Realistic Mock Commits Data ---
+    const MOCK_COMMITS = [
+      {
+        sha: "7a8f92b4198c61a5b4f2c009d57a2c114f6b2819",
+        shortSha: "7a8f92b",
+        parents: ["d42e18a9918b82a7f5f2c009d57a2c114f6b2818"],
+        author: "zhangdx",
+        authorEmail: "zhangdx@corp.com",
+        committedAt: "10分钟前",
+        subject: "feat(git-graph): add interactive topology visualization and commit inspector",
+        refs: [
+          { type: "head", name: "HEAD", current: true },
+          { type: "branch", name: "feat/git-graph", current: true },
+          { type: "remote", name: "origin/feat/git-graph" }
+        ],
+        files: [
+          { path: "components/git-graph/GitGraphView.tsx", additions: 184, deletions: 0, hunk: "@@ -0,0 +1,184 @@\n+export function GitGraphView() {\n+  // Virtualized row layout\n+}" },
+          { path: "components/git-graph/GitGraphRowSvg.tsx", additions: 86, deletions: 0, hunk: "@@ -0,0 +1,86 @@\n+export const GitGraphRowSvg = memo(function() {\n+  // Clean bezier paths\n+}" },
+          { path: "lib/git-graph-model.ts", additions: 135, deletions: 0, hunk: "@@ -0,0 +1,135 @@\n+export function computeGraphRows(commits) {\n+  // Lane allocation\n+}" },
+        ]
+      },
+      {
+        sha: "d42e18a9918b82a7f5f2c009d57a2c114f6b2818",
+        shortSha: "d42e18a",
+        parents: ["c10ab8f9918b82a7f5f2c009d57a2c114f6b2817"],
+        author: "zhangdx",
+        authorEmail: "zhangdx@corp.com",
+        committedAt: "45分钟前",
+        subject: "test(git-graph): add unit tests for computeGraphRows and bezier curves",
+        refs: [],
+        files: [
+          { path: "lib/git-graph-model.test.mjs", additions: 92, deletions: 0, hunk: "@@ -0,0 +1,92 @@\n+test('allocates deterministic tracks for forks and merges')" }
+        ]
+      },
+      {
+        sha: "c10ab8f9918b82a7f5f2c009d57a2c114f6b2817",
+        shortSha: "c10ab8f",
+        parents: ["c91038b9918b82a7f5f2c009d57a2c114f6b2816", "m71128a9918b82a7f5f2c009d57a2c114f6b2815"],
+        author: "zhangdx",
+        authorEmail: "zhangdx@corp.com",
+        committedAt: "2小时前",
+        subject: "Merge branch 'main' into feat/git-graph",
+        refs: [],
+        files: [
+          { path: "package.json", additions: 2, deletions: 1, hunk: "@@ -12,2 +12,3 @@\n-  \"version\": \"0.12.0\"\n+  \"version\": \"0.13.0\"" }
+        ]
+      },
+      {
+        sha: "m71128a9918b82a7f5f2c009d57a2c114f6b2815",
+        shortSha: "m71128a",
+        parents: ["m61019a9918b82a7f5f2c009d57a2c114f6b2814"],
+        author: "maintainer",
+        authorEmail: "dev@agegr.com",
+        committedAt: "3小时前",
+        subject: "release: v0.13.0 (#1435)",
+        refs: [
+          { type: "branch", name: "main" },
+          { type: "remote", name: "origin/main" },
+          { type: "tag", name: "v0.13.0" }
+        ],
+        files: [
+          { path: "package.json", additions: 1, deletions: 1, hunk: "@@ -14,1 +14,1 @@\n-  0.12.9\n+  0.13.0" },
+          { path: "CHANGELOG.md", additions: 45, deletions: 0, hunk: "@@ -1,0 +1,45 @@\n+## 0.13.0 Release Notes" }
+        ]
+      },
+      {
+        sha: "m61019a9918b82a7f5f2c009d57a2c114f6b2814",
+        shortSha: "m61019a",
+        parents: ["m50821a9918b82a7f5f2c009d57a2c114f6b2813", "f20912a9918b82a7f5f2c009d57a2c114f6b2812"],
+        author: "maintainer",
+        authorEmail: "dev@agegr.com",
+        committedAt: "5小时前",
+        subject: "Merge pull request #1432 from agegr/fix/subagent-isolation",
+        refs: [],
+        files: [
+          { path: "lib/subagents.ts", additions: 14, deletions: 3, hunk: "@@ -55,3 +55,14 @@\n-  return session;\n+  return sandboxedSession;" }
+        ]
+      },
+      {
+        sha: "c91038b9918b82a7f5f2c009d57a2c114f6b2816",
+        shortSha: "c91038b",
+        parents: ["c80911a9918b82a7f5f2c009d57a2c114f6b2811"],
+        author: "zhangdx",
+        authorEmail: "zhangdx@corp.com",
+        committedAt: "6小时前",
+        subject: "feat(git): add /api/git/graph endpoint and safe ref validation",
+        refs: [],
+        files: [
+          { path: "app/api/git/graph/route.ts", additions: 64, deletions: 0, hunk: "@@ -0,0 +1,64 @@\n+export async function GET(req: NextRequest) {\n+  return NextResponse.json(await getGitGraph(cwd));\n+}" },
+          { path: "lib/git-graph.ts", additions: 82, deletions: 0, hunk: "@@ -0,0 +1,82 @@\n+export async function getGitGraph(cwd, opts) {\n+  // spawns git log with topo order\n+}" }
+        ]
+      },
+      {
+        sha: "f20912a9918b82a7f5f2c009d57a2c114f6b2812",
+        shortSha: "f20912a",
+        parents: ["f10719a9918b82a7f5f2c009d57a2c114f6b2810"],
+        author: "contributor",
+        authorEmail: "alice@worker.org",
+        committedAt: "7小时前",
+        subject: "fix(subagents): preserve isolate sandbox environment across runs",
+        refs: [
+          { type: "branch", name: "fix/subagent-isolation" }
+        ],
+        files: [
+          { path: "lib/subagent-isolation.ts", additions: 22, deletions: 8, hunk: "@@ -21,8 +21,22 @@\n-  runUnprotected();\n+  withScopedSandbox();" }
+        ]
+      },
+      {
+        sha: "f10719a9918b82a7f5f2c009d57a2c114f6b2810",
+        shortSha: "f10719a",
+        parents: ["m50821a9918b82a7f5f2c009d57a2c114f6b2813"],
+        author: "contributor",
+        authorEmail: "alice@worker.org",
+        committedAt: "8小时前",
+        subject: "test(subagents): reproduce sandbox leak in subagent runtime",
+        refs: [],
+        files: [
+          { path: "lib/subagent-isolation.test.mjs", additions: 35, deletions: 0, hunk: "@@ -0,0 +1,35 @@\n+test('subagent does not mutate parent globals')" }
+        ]
+      },
+      {
+        sha: "c80911a9918b82a7f5f2c009d57a2c114f6b2811",
+        shortSha: "c80911a",
+        parents: ["m50821a9918b82a7f5f2c009d57a2c114f6b2813"],
+        author: "zhangdx",
+        authorEmail: "zhangdx@corp.com",
+        committedAt: "9小时前",
+        subject: "refactor(git-types): extract GitGraphCommit and GitGraphRef interfaces",
+        refs: [],
+        files: [
+          { path: "lib/git-types.ts", additions: 28, deletions: 2, hunk: "@@ -15,2 +15,28 @@\n+export interface GitGraphCommit {\n+  sha: string;\n+  refs: GitGraphRef[];\n+}" }
+        ]
+      },
+      {
+        sha: "m50821a9918b82a7f5f2c009d57a2c114f6b2813",
+        shortSha: "m50821a",
+        parents: ["m40711a9918b82a7f5f2c009d57a2c114f6b2809"],
+        author: "maintainer",
+        authorEmail: "dev@agegr.com",
+        committedAt: "昨天 14:20",
+        subject: "fix(files): handle symlinked worktrees in bare repository detection",
+        refs: [],
+        files: [
+          { path: "lib/worktree.ts", additions: 19, deletions: 7, hunk: "@@ -80,7 +80,19 @@\n-  return path.resolve(p);\n+  return resolveRealPath(p);" }
+        ]
+      },
+      {
+        sha: "m40711a9918b82a7f5f2c009d57a2c114f6b2809",
+        shortSha: "m40711a",
+        parents: ["m30610a9918b82a7f5f2c009d57a2c114f6b2808", "b10502a9918b82a7f5f2c009d57a2c114f6b2807"],
+        author: "maintainer",
+        authorEmail: "dev@agegr.com",
+        committedAt: "前天 18:30",
+        subject: "perf(virtualizer): optimize visible row range calculation in DelimitedTable",
+        refs: [],
+        files: [
+          { path: "lib/delimited-table.ts", additions: 12, deletions: 15, hunk: "@@ -40,15 +40,12 @@\n-  // linear scan\n+  // binary range lookup" }
+        ]
+      },
+      {
+        sha: "b10502a9918b82a7f5f2c009d57a2c114f6b2807",
+        shortSha: "b10502a",
+        parents: ["m30610a9918b82a7f5f2c009d57a2c114f6b2808"],
+        author: "data-dev",
+        authorEmail: "csv@fast.io",
+        committedAt: "3天前",
+        subject: "feat(table): add CSV/TSV table preview with sticky gutter",
+        refs: [],
+        files: [
+          { path: "components/DelimitedTable.tsx", additions: 110, deletions: 0, hunk: "@@ -0,0 +1,110 @@\n+export function DelimitedTable() {\n+  // Virtualized table for large tabular files\n+}" }
+        ]
+      },
+      {
+        sha: "m30610a9918b82a7f5f2c009d57a2c114f6b2808",
+        shortSha: "m30610a",
+        parents: ["m20501a9918b82a7f5f2c009d57a2c114f6b2806"],
+        author: "maintainer",
+        authorEmail: "dev@agegr.com",
+        committedAt: "4天前",
+        subject: "docs(agents): update sessions.md with turn-duration and cache-miss notices",
+        refs: [],
+        files: [
+          { path: "docs/agents/sessions.md", additions: 32, deletions: 4, hunk: "@@ -102,4 +102,32 @@\n+Turn duration tracking and cache miss indicators." }
+        ]
+      },
+      {
+        sha: "m20501a9918b82a7f5f2c009d57a2c114f6b2806",
+        shortSha: "m20501a",
+        parents: ["m10401a9918b82a7f5f2c009d57a2c114f6b2805"],
+        author: "maintainer",
+        authorEmail: "dev@agegr.com",
+        committedAt: "5天前",
+        subject: "chore(deps): pin @earendil-works/pi-coding-agent to 1.4.0",
+        refs: [],
+        files: [
+          { path: "package.json", additions: 6, deletions: 6, hunk: "@@ -25,6 +25,6 @@\n-  \"@earendil-works/pi-coding-agent\": \"^1.2.0\"\n+  \"@earendil-works/pi-coding-agent\": \"1.4.0\"" }
+        ]
+      },
+      {
+        sha: "m10401a9918b82a7f5f2c009d57a2c114f6b2805",
+        shortSha: "m10401a",
+        parents: [],
+        author: "agegr",
+        authorEmail: "core@agegr.com",
+        committedAt: "10天前",
+        subject: "Initial commit for pi-web 0.1.0 (light web wrapper for pi agent)",
+        refs: [],
+        files: [
+          { path: "README.md", additions: 42, deletions: 0, hunk: "@@ -0,0 +1,42 @@\n+# pi-web\n+Web UI for pi coding agent" }
+        ]
+      }
+    ];
+
+    // --- 2. Topology Algorithm State & Config ---
+    let GRAPH_PALETTE = [
+      "var(--accent)",
+      "#3b82f6",
+      "#22c55e",
+      "#f59e0b",
+      "#ec4899",
+      "#8b5cf6",
+      "#06b6d4",
+      "var(--text-muted)",
+    ];
+
+    let CFG = {
+      laneWidth: 16,
+      rowHeight: 28,
+      nodeRadius: 4,
+      mergeRadius: 5.5,
+      tension: 0.75,
+    };
+
+    // --- 3. Pure TS Topology DAG Math (from ThinkRail gitGraphModel.ts) ---
+    function computeGraphRows(commits) {
+      if (commits.length === 0) return [];
+      const tracks = [];
+      const rows = [];
+
+      for (let rowIndex = 0; rowIndex < commits.length; rowIndex++) {
+        const commit = commits[rowIndex];
+        if (!commit) continue;
+
+        // 1. Check which tracks are expecting this commit
+        const incomingLanes = [];
+        for (let i = 0; i < tracks.length; i++) {
+          if (tracks[i] === commit.sha) {
+            incomingLanes.push(i);
+          }
+        }
+
+        let lane;
+        const curves = [];
+
+        if (incomingLanes.length > 0) {
+          const primaryLane = incomingLanes[0] ?? 0;
+          lane = primaryLane;
+
+          // Other incoming tracks merge into this commit here
+          for (let j = 1; j < incomingLanes.length; j++) {
+            const otherLane = incomingLanes[j];
+            if (otherLane !== undefined) {
+              curves.push({
+                fromLane: otherLane,
+                toLane: lane,
+                type: "from-top",
+                colorIndex: otherLane % GRAPH_PALETTE.length,
+              });
+              tracks[otherLane] = null;
+            }
+          }
+        } else {
+          // New branch head / tip
+          const emptySlot = tracks.indexOf(null);
+          lane = emptySlot !== -1 ? emptySlot : tracks.length;
+          tracks[lane] = commit.sha;
+        }
+
+        const colorIndex = lane % GRAPH_PALETTE.length;
+        const isMerge = commit.parents.length > 1;
+        const hasTopStraight = incomingLanes.length > 0;
+
+        // 2. Pass-through lanes
+        const passThroughLanes = [];
+        for (let i = 0; i < tracks.length; i++) {
+          if (i !== lane && tracks[i] !== null && !incomingLanes.includes(i)) {
+            passThroughLanes.push(i);
+          }
+        }
+
+        // 3. Set outgoing targets for parents
+        let hasBottomStraight = false;
+        if (commit.parents.length === 0) {
+          tracks[lane] = null;
+        } else {
+          const p0 = commit.parents[0];
+          if (p0) {
+            tracks[lane] = p0;
+            hasBottomStraight = true;
+          }
+
+          for (let pIdx = 1; pIdx < commit.parents.length; pIdx++) {
+            const pOther = commit.parents[pIdx];
+            if (!pOther) continue;
+
+            const existingTrackIndex = tracks.indexOf(pOther);
+            let targetLane;
+            if (existingTrackIndex !== -1) {
+              targetLane = existingTrackIndex;
+            } else {
+              const emptyTrack = tracks.indexOf(null);
+              targetLane = emptyTrack !== -1 ? emptyTrack : tracks.length;
+              tracks[targetLane] = pOther;
+            }
+
+            curves.push({
+              fromLane: lane,
+              toLane: targetLane,
+              type: "to-bottom",
+              colorIndex: targetLane % GRAPH_PALETTE.length,
+            });
+          }
+        }
+
+        let rowMaxLanes = lane;
+        for (const p of passThroughLanes) if (p > rowMaxLanes) rowMaxLanes = p;
+        for (const c of curves) {
+          if (c.fromLane > rowMaxLanes) rowMaxLanes = c.fromLane;
+          if (c.toLane > rowMaxLanes) rowMaxLanes = c.toLane;
+        }
+
+        rows.push({
+          commit,
+          rowIndex,
+          lane,
+          colorIndex,
+          isMerge,
+          passThroughLanes,
+          hasTopStraight,
+          hasBottomStraight,
+          curves,
+          maxLanes: Math.max(rowMaxLanes + 1, 1),
+        });
+
+        while (tracks.length > 0 && tracks[tracks.length - 1] === null) {
+          tracks.pop();
+        }
+      }
+
+      return rows;
+    }
+
+    function getBezierPath(curve, laneWidth, rowHeight, offsetX, tension) {
+      const x1 = curve.fromLane * laneWidth + offsetX;
+      const x2 = curve.toLane * laneWidth + offsetX;
+
+      if (curve.type === "from-top") {
+        const y1 = 0;
+        const y2 = rowHeight / 2;
+        const cy1 = rowHeight * (1 - tension);
+        const cy2 = rowHeight * (1 - tension);
+        return `M ${x1} ${y1} C ${x1} ${cy1}, ${x2} ${cy2}, ${x2} ${y2}`;
+      }
+
+      const y1 = rowHeight / 2;
+      const y2 = rowHeight;
+      const cy1 = rowHeight * tension;
+      const cy2 = rowHeight * tension;
+      return `M ${x1} ${y1} C ${x1} ${cy1}, ${x2} ${cy2}, ${x2} ${y2}`;
+    }
+
+    // --- 4. Render Vector SVG for Single Row ---
+    function renderRowSvg(row, isSelected, svgWidth) {
+      const offsetX = CFG.laneWidth / 2;
+      const x = (l) => l * CFG.laneWidth + offsetX;
+      const yCenter = CFG.rowHeight / 2;
+      const nodeColor = GRAPH_PALETTE[row.colorIndex] || "var(--accent)";
+
+      let svg = `<svg width="${svgWidth}" height="${CFG.rowHeight}" style="flex-shrink:0; overflow:visible;" aria-hidden="true">`;
+
+      // 1. Pass-through lines
+      for (const l of row.passThroughLanes) {
+        svg += `<line x1="${x(l)}" y1="0" x2="${x(l)}" y2="${CFG.rowHeight}" stroke="${GRAPH_PALETTE[l % GRAPH_PALETTE.length]}" stroke-width="2" />`;
+      }
+
+      // 2. Top straight
+      if (row.hasTopStraight) {
+        svg += `<line x1="${x(row.lane)}" y1="0" x2="${x(row.lane)}" y2="${yCenter}" stroke="${nodeColor}" stroke-width="2" />`;
+      }
+
+      // 3. Bottom straight
+      if (row.hasBottomStraight) {
+        svg += `<line x1="${x(row.lane)}" y1="${yCenter}" x2="${x(row.lane)}" y2="${CFG.rowHeight}" stroke="${nodeColor}" stroke-width="2" />`;
+      }
+
+      // 4. Bezier curves
+      for (const curve of row.curves) {
+        const path = getBezierPath(curve, CFG.laneWidth, CFG.rowHeight, offsetX, CFG.tension);
+        svg += `<path d="${path}" fill="none" stroke="${GRAPH_PALETTE[curve.colorIndex]}" stroke-width="2" stroke-linecap="round" />`;
+      }
+
+      // 5. Selected ring indicator
+      if (isSelected) {
+        svg += `<circle cx="${x(row.lane)}" cy="${yCenter}" r="${row.isMerge ? 8 : 7}" fill="none" stroke="${nodeColor}" stroke-width="1.6" stroke-dasharray="2 2" />`;
+      }
+
+      // 6. Node commit circle
+      if (row.isMerge) {
+        svg += `<circle cx="${x(row.lane)}" cy="${yCenter}" r="${CFG.mergeRadius}" fill="var(--bg)" stroke="${nodeColor}" stroke-width="2" />`;
+        svg += `<circle cx="${x(row.lane)}" cy="${yCenter}" r="2" fill="${nodeColor}" />`;
+      } else {
+        svg += `<circle cx="${x(row.lane)}" cy="${yCenter}" r="${CFG.nodeRadius}" fill="${nodeColor}" stroke="var(--bg)" stroke-width="1.2" />`;
+      }
+
+      svg += `</svg>`;
+      return svg;
+    }
+
+    // --- 5. Application State & Interaction Controller ---
+    const state = {
+      commits: MOCK_COMMITS,
+      rows: computeGraphRows(MOCK_COMMITS),
+      selectedSha: MOCK_COMMITS[0].sha,
+      selectedFileIndex: 0,
+      searchQuery: "",
+      branchFilter: "all",
+      graphColWidth: 100,
+      descColWidth: null,
+      fullWidth: false,
+      theme: "dark",
+    };
+
+    const DOM = {
+      graphBody: document.getElementById("graph-body"),
+      graphHeader: document.getElementById("graph-header"),
+      colHeadGraph: document.getElementById("col-head-graph"),
+      colHeadDesc: document.getElementById("col-head-desc"),
+      resizerGraph: document.getElementById("resizer-graph"),
+      resizerDesc: document.getElementById("resizer-desc"),
+      resizerDetails: document.getElementById("resizer-details"),
+      searchInput: document.getElementById("search-input"),
+      searchClear: document.getElementById("search-clear"),
+      branchTrigger: document.getElementById("branch-trigger"),
+      branchMenu: document.getElementById("branch-menu"),
+      selectedBranchText: document.getElementById("selected-branch-text"),
+      commitCounter: document.getElementById("commit-counter"),
+      detailsPanel: document.getElementById("details-panel"),
+      dSubject: document.getElementById("d-subject"),
+      dSha: document.getElementById("d-sha"),
+      dAuthor: document.getElementById("d-author"),
+      dEmail: document.getElementById("d-email"),
+      dDate: document.getElementById("d-date"),
+      dParents: document.getElementById("d-parents"),
+      detailsFilesList: document.getElementById("details-files-list"),
+      detailsDiffPreview: document.getElementById("details-diff-preview"),
+      btnCloseDetails: document.getElementById("btn-close-details"),
+      rightPanel: document.getElementById("right-panel"),
+      btnToggleLayout: document.getElementById("btn-toggle-layout"),
+      layoutLabel: document.getElementById("layout-label"),
+      btnExpandPanel: document.getElementById("btn-expand-panel"),
+      btnToggleTheme: document.getElementById("btn-toggle-theme"),
+      themeLabel: document.getElementById("theme-label"),
+      btnOpenTweaks: document.getElementById("btn-open-tweaks"),
+      tweaksPanel: document.getElementById("tweaks-panel"),
+      btnCloseTweaks: document.getElementById("btn-close-tweaks"),
+    };
+
+    function renderRefBadges(refs, curveColor) {
+      if (!refs || refs.length === 0) return "";
+      return refs.map(r => {
+        let cls = `ref-badge ${r.type}`;
+        if (r.current) cls += " current";
+        let icon = "";
+        if (r.type === "head") icon = `<span style="display:inline-block; width:5px; height:5px; border-radius:50%; background:#34d399;"></span>`;
+        else if (r.type === "tag") icon = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><path d="M7 7h.01"/></svg>`;
+        let inlineStyle = "";
+        if (r.type === "remote") {
+          inlineStyle = `style="color:${curveColor}; border-color:${curveColor}; background:color-mix(in srgb, ${curveColor} 8%, transparent);"`;
+        } else if (r.type === "branch") {
+          const bg = r.current ? `color-mix(in srgb, ${curveColor} 20%, var(--bg-panel))` : `color-mix(in srgb, ${curveColor} 10%, var(--bg-panel))`;
+          inlineStyle = `style="color:${curveColor}; border-color:${curveColor}; background:${bg}; font-weight:${r.current ? 600 : 500};"`;
+        }
+        return `<span class="${cls}" ${inlineStyle}>${icon}${r.name}</span>`;
+      }).join("");
+    }
+
+    function renderRows() {
+      const q = state.searchQuery.toLowerCase().trim();
+      let visibleCount = 0;
+
+      const html = state.rows.map(row => {
+        const c = row.commit;
+        const isSelected = c.sha === state.selectedSha;
+
+        // Filtering
+        let matchesSearch = true;
+        if (q) {
+          matchesSearch = c.subject.toLowerCase().includes(q) ||
+                          c.shortSha.toLowerCase().includes(q) ||
+                          c.author.toLowerCase().includes(q);
+        }
+
+        let matchesBranch = true;
+        if (state.branchFilter !== "all") {
+          matchesBranch = c.refs.some(r => r.name === state.branchFilter) ||
+                          (state.branchFilter === "feat/git-graph" && (row.lane === 0 || row.curves.some(cu => cu.toLane === 0)));
+        }
+
+        const isVisible = matchesSearch && matchesBranch;
+        if (isVisible) visibleCount++;
+
+        const svgWidth = Math.max(row.maxLanes * CFG.laneWidth + 8, state.graphColWidth);
+        const curveColor = GRAPH_PALETTE[row.colorIndex] || "var(--accent)";
+        const refHtml = renderRefBadges(c.refs, curveColor);
+
+        return `
+          <div class="graph-row ${isSelected ? 'selected' : ''} ${!isVisible ? 'filtered-out' : ''}"
+               data-sha="${c.sha}"
+               style="height: ${CFG.rowHeight}px;">
+            <div class="cell-graph" style="width: ${state.graphColWidth}px;">
+              ${renderRowSvg(row, isSelected, svgWidth)}
+            </div>
+            <div class="cell-desc" style="${state.descColWidth ? `width:${state.descColWidth}px; flex:none;` : ''}">
+              ${refHtml}
+              <span class="commit-subject" title="${c.subject}">${c.subject}</span>
+            </div>
+            <div class="cell-author" title="${c.author} (${c.authorEmail})">${c.author}</div>
+            <div class="cell-date">${c.committedAt}</div>
+            <div class="cell-sha">${c.shortSha}</div>
+          </div>
+        `;
+      }).join("");
+
+      DOM.graphBody.innerHTML = html;
+      DOM.commitCounter.textContent = `${visibleCount} 个提交`;
+
+      // Re-bind row click handlers
+      const rowEls = DOM.graphBody.querySelectorAll(".graph-row");
+      rowEls.forEach(el => {
+        el.addEventListener("click", () => {
+          const sha = el.getAttribute("data-sha");
+          selectCommit(sha);
+        });
+      });
+    }
+
+    function selectCommit(sha) {
+      state.selectedSha = sha;
+      state.selectedFileIndex = 0;
+      const commit = state.commits.find(c => c.sha === sha);
+      if (!commit) return;
+
+      DOM.detailsPanel.style.display = "flex";
+      DOM.dSubject.textContent = commit.subject;
+      DOM.dSha.textContent = commit.shortSha;
+      DOM.dAuthor.textContent = commit.author;
+      DOM.dEmail.textContent = commit.authorEmail;
+      DOM.dDate.textContent = commit.committedAt;
+
+      // Parents list
+      if (commit.parents.length === 0) {
+        DOM.dParents.innerHTML = `<span style="color:var(--text-dim);">(根提交 / Root)</span>`;
+      } else {
+        DOM.dParents.innerHTML = commit.parents.map(p => {
+          const short = p.slice(0, 7);
+          return `<span class="parent-tag" data-parent-sha="${p}" title="跳转至父提交 ${short}">${short}</span>`;
+        }).join(" ");
+      }
+
+      // Parents click to jump
+      DOM.dParents.querySelectorAll(".parent-tag").forEach(tag => {
+        tag.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const pSha = tag.getAttribute("data-parent-sha");
+          selectCommit(pSha);
+          // scroll row into view
+          const targetRow = DOM.graphBody.querySelector(`.graph-row[data-sha="${pSha}"]`);
+          if (targetRow) targetRow.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        });
+      });
+
+      // Render changed files
+      renderChangedFiles(commit);
+
+      // Re-render rows to update selection highlight ring
+      renderRows();
+    }
+
+    function renderChangedFiles(commit) {
+      if (!commit.files || commit.files.length === 0) {
+        DOM.detailsFilesList.innerHTML = `<div style="padding:10px; color:var(--text-dim); font-size:11px;">无文件变更记录</div>`;
+        DOM.detailsDiffPreview.innerHTML = `<div>没有变更差异</div>`;
+        return;
+      }
+
+      const filesHtml = commit.files.map((f, idx) => {
+        const isActive = idx === state.selectedFileIndex;
+        const name = f.path.split("/").pop();
+        return `
+          <div class="file-change-item ${isActive ? 'active' : ''}" data-file-idx="${idx}" title="${f.path}">
+            <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:160px;">${name}</span>
+            <div class="diff-stat">
+              ${f.additions ? `<span class="diff-add">+${f.additions}</span>` : ''}
+              ${f.deletions ? `<span class="diff-del">-${f.deletions}</span>` : ''}
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      DOM.detailsFilesList.innerHTML = filesHtml;
+
+      // Bind file click
+      DOM.detailsFilesList.querySelectorAll(".file-change-item").forEach(item => {
+        item.addEventListener("click", () => {
+          const idx = Number(item.getAttribute("data-file-idx"));
+          state.selectedFileIndex = idx;
+          renderChangedFiles(commit);
+        });
+      });
+
+      // Render Diff lines for selected file
+      const curFile = commit.files[state.selectedFileIndex] || commit.files[0];
+      if (curFile) {
+        const diffLines = (curFile.hunk || "").split("\n").map(line => {
+          let cls = "diff-line";
+          if (line.startsWith("+")) cls += " add";
+          else if (line.startsWith("-")) cls += " del";
+          else if (line.startsWith("@")) cls += " hunk";
+          return `<div class="${cls}">${escapeHtml(line)}</div>`;
+        }).join("");
+
+        DOM.detailsDiffPreview.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border); padding-bottom:4px; margin-bottom:8px; color:var(--text);">
+            <span>📄 ${curFile.path}</span>
+            <button style="background:var(--bg-panel); border:1px solid var(--border); border-radius:4px; font-size:10px; color:var(--accent); padding:2px 6px; cursor:pointer;" onclick="alert('将在 FileViewer 中以只读比对模式打开该文件完整差异！')">在编辑器打开 Diff ↗</button>
+          </div>
+          ${diffLines}
+        `;
+      }
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    // --- 6. Column Resizing Interaction (Pointer Drag + Double Click Reset) ---
+    function setupColumnResizing() {
+      // 1. Graph Column
+      DOM.resizerGraph.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        DOM.resizerGraph.classList.add("dragging");
+        const startX = e.clientX;
+        const startWidth = state.graphColWidth;
+
+        function onPointerMove(moveEvent) {
+          const delta = moveEvent.clientX - startX;
+          const nextWidth = Math.max(50, Math.min(600, Math.round(startWidth + delta)));
+          state.graphColWidth = nextWidth;
+          DOM.colHeadGraph.style.width = `${nextWidth}px`;
+          renderRows();
+        }
+
+        function onPointerUp() {
+          DOM.resizerGraph.classList.remove("dragging");
+          window.removeEventListener("pointermove", onPointerMove);
+          window.removeEventListener("pointerup", onPointerUp);
+        }
+
+        window.addEventListener("pointermove", onPointerMove);
+        window.addEventListener("pointerup", onPointerUp);
+      });
+
+      DOM.resizerGraph.addEventListener("dblclick", () => {
+        state.graphColWidth = 100;
+        DOM.colHeadGraph.style.width = "100px";
+        renderRows();
+      });
+
+      // 2. Description Column
+      DOM.resizerDesc.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        DOM.resizerDesc.classList.add("dragging");
+        const startX = e.clientX;
+        const startWidth = state.descColWidth ?? DOM.colHeadDesc.getBoundingClientRect().width;
+
+        function onPointerMove(moveEvent) {
+          const delta = moveEvent.clientX - startX;
+          const nextWidth = Math.max(160, Math.min(1800, Math.round(startWidth + delta)));
+          state.descColWidth = nextWidth;
+          DOM.colHeadDesc.style.flex = "none";
+          DOM.colHeadDesc.style.width = `${nextWidth}px`;
+          renderRows();
+        }
+
+        function onPointerUp() {
+          DOM.resizerDesc.classList.remove("dragging");
+          window.removeEventListener("pointermove", onPointerMove);
+          window.removeEventListener("pointerup", onPointerUp);
+        }
+
+        window.addEventListener("pointermove", onPointerMove);
+        window.addEventListener("pointerup", onPointerUp);
+      });
+
+      DOM.resizerDesc.addEventListener("dblclick", () => {
+        state.descColWidth = null;
+        DOM.colHeadDesc.style.flex = "1";
+        DOM.colHeadDesc.style.width = "auto";
+        renderRows();
+      });
+
+      // 3. Details Drawer Height Resizing
+      DOM.resizerDetails.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        const startY = e.clientY;
+        const startHeight = DOM.detailsPanel.getBoundingClientRect().height;
+
+        function onPointerMove(moveEvent) {
+          const delta = startY - moveEvent.clientY;
+          const nextHeight = Math.max(110, Math.min(420, Math.round(startHeight + delta)));
+          DOM.detailsPanel.style.height = `${nextHeight}px`;
+        }
+
+        function onPointerUp() {
+          window.removeEventListener("pointermove", onPointerMove);
+          window.removeEventListener("pointerup", onPointerUp);
+        }
+
+        window.addEventListener("pointermove", onPointerMove);
+        window.addEventListener("pointerup", onPointerUp);
+      });
+    }
+
+    // --- 7. Search & Filter Handlers ---
+    DOM.searchInput.addEventListener("input", (e) => {
+      state.searchQuery = e.target.value;
+      DOM.searchClear.style.display = state.searchQuery ? "flex" : "none";
+      renderRows();
+    });
+
+    DOM.searchClear.addEventListener("click", () => {
+      state.searchQuery = "";
+      DOM.searchInput.value = "";
+      DOM.searchClear.style.display = "none";
+      renderRows();
+      DOM.searchInput.focus();
+    });
+
+    // Branch Dropdown Menu
+    DOM.branchTrigger.addEventListener("click", (e) => {
+      e.stopPropagation();
+      DOM.branchMenu.classList.toggle("show");
+    });
+
+    DOM.branchMenu.querySelectorAll(".branch-option").forEach(opt => {
+      opt.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const branch = opt.getAttribute("data-branch");
+        state.branchFilter = branch;
+        DOM.selectedBranchText.textContent = opt.textContent.split(" ")[0];
+        DOM.branchMenu.querySelectorAll(".branch-option").forEach(o => o.classList.remove("selected"));
+        opt.classList.add("selected");
+        DOM.branchMenu.classList.remove("show");
+        renderRows();
+      });
+    });
+
+    window.addEventListener("click", () => {
+      DOM.branchMenu.classList.remove("show");
+      DOM.tweaksPanel.classList.remove("show");
+    });
+
+    // Details Drawer Close
+    DOM.btnCloseDetails.addEventListener("click", () => {
+      DOM.detailsPanel.style.display = "none";
+    });
+
+    // Copy SHA
+    DOM.dSha.addEventListener("click", () => {
+      navigator.clipboard.writeText(state.selectedSha);
+      const originalText = DOM.dSha.textContent;
+      DOM.dSha.textContent = "已复制 ✓";
+      setTimeout(() => { DOM.dSha.textContent = originalText; }, 1500);
+    });
+
+    // Layout Toggle (Side-by-side vs Full Panel)
+    function toggleLayout() {
+      state.fullWidth = !state.fullWidth;
+      if (state.fullWidth) {
+        DOM.rightPanel.classList.add("full-width");
+        DOM.layoutLabel.textContent = "恢复分栏";
+      } else {
+        DOM.rightPanel.classList.remove("full-width");
+        DOM.layoutLabel.textContent = "全屏展开";
+      }
+    }
+    DOM.btnToggleLayout.addEventListener("click", toggleLayout);
+    DOM.btnExpandPanel.addEventListener("click", toggleLayout);
+
+    // Theme Switcher (Dark -> Light -> Mist)
+    const THEMES = ["dark", "light", "mist"];
+    DOM.btnToggleTheme.addEventListener("click", () => {
+      const curIdx = THEMES.indexOf(state.theme);
+      state.theme = THEMES[(curIdx + 1) % THEMES.length];
+      document.documentElement.className = state.theme === "dark" ? "dark" : "";
+      document.documentElement.setAttribute("data-theme", state.theme);
+      DOM.themeLabel.textContent = state.theme === "dark" ? "浅色模式" : state.theme === "light" ? "Mist 模式" : "暗色模式";
+      renderRows();
+    });
+
+    // Tweaks Panel Handlers
+    DOM.btnOpenTweaks.addEventListener("click", (e) => {
+      e.stopPropagation();
+      DOM.tweaksPanel.classList.toggle("show");
+    });
+    DOM.btnCloseTweaks.addEventListener("click", () => {
+      DOM.tweaksPanel.classList.remove("show");
+    });
+    DOM.tweaksPanel.addEventListener("click", (e) => e.stopPropagation());
+
+    document.getElementById("tweak-row-height").addEventListener("input", (e) => {
+      CFG.rowHeight = Number(e.target.value);
+      document.getElementById("val-row-height").textContent = `${CFG.rowHeight}px`;
+      renderRows();
+    });
+    document.getElementById("tweak-lane-width").addEventListener("input", (e) => {
+      CFG.laneWidth = Number(e.target.value);
+      document.getElementById("val-lane-width").textContent = `${CFG.laneWidth}px`;
+      renderRows();
+    });
+    document.getElementById("tweak-node-radius").addEventListener("input", (e) => {
+      CFG.nodeRadius = Number(e.target.value);
+      document.getElementById("val-node-radius").textContent = `${CFG.nodeRadius}px`;
+      renderRows();
+    });
+    document.getElementById("tweak-tension").addEventListener("input", (e) => {
+      CFG.tension = Number(e.target.value) / 100;
+      document.getElementById("val-tension").textContent = CFG.tension.toFixed(2);
+      renderRows();
+    });
+
+    // --- 8. Initialize ---
+    setupColumnResizing();
+    selectCommit(MOCK_COMMITS[0].sha);
+    renderRows();
+  </script>
+</body>
+</html>
