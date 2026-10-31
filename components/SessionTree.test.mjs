@@ -10,7 +10,7 @@ const jiti = createJiti(import.meta.url, {
 const React = await jiti.import("react");
 const { renderToStaticMarkup } = await jiti.import("react-dom/server");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
-const { SessionTree, sessionRowTitle } = await jiti.import("./SessionTree.tsx");
+const { ActivitySummary, SessionTree, sessionRowTitle } = await jiti.import("./SessionTree.tsx");
 const { buildSessionTree, SIDEBAR_ROW_HEIGHTS } = await jiti.import("@/lib/session-tree.ts");
 const source = await readFile(new URL("./SessionTree.tsx", import.meta.url), "utf8");
 const css = await readFile(new URL("../app/sidebar.css", import.meta.url), "utf8");
@@ -41,9 +41,11 @@ const defaults = {
   confirmDeleteRootId: null,
   activeMenuRowKey: null,
   onSelectFamily: noop,
+  onLocateRetained: noop,
   onToggleGroup: noop,
   onShowMore: noop,
   onShowLess: noop,
+  onToggleUnread: noop,
   onTogglePinned: noop,
   onArchiveFamily: noop,
   onRestoreFamily: noop,
@@ -99,20 +101,20 @@ function sessionRow(root, { context = "group", status = {}, rowProject = project
     family: { root, subagents: [], latestModified: root.modified },
     context,
     project: rowProject,
-    status: { running: false, awaiting: false, unread: false, selected: false, transient: false, ...status },
+    status: { running: false, awaiting: false, unread: false, pinned: false, selected: false, transient: false, ...status },
   };
 }
 
 function groupRow(extra = {}, projectExtra = {}) {
   const groupProject = { ...project, ...projectExtra };
-  return { kind: "group", key: `group:${groupProject.key}`, project: groupProject, expanded: true, running: 0, awaiting: 0, unread: 0, ...extra };
+  return { kind: "group", key: `group:${groupProject.key}`, project: groupProject, expanded: true, running: 0, awaiting: 0, ...extra };
 }
 
 const footer = [{ kind: "footer-open", key: "footer-open" }];
 
 test("the pinned header toggles the section and shows activity dots only while collapsed", () => {
   const collapsed = rowMarkup(render({
-    rows: [{ kind: "pinned-header", key: "pinned-header", count: 3, collapsed: true, running: 1, awaiting: 0, unread: 2 }],
+    rows: [{ kind: "pinned-header", key: "pinned-header", count: 3, collapsed: true, running: 1, awaiting: 0 }],
   }), "pinned-header");
   // A group header's height: both are section headers.
   assert.match(collapsed, /^<div class="session-tree-row session-tree-pinned-header" style="top:0;height:28px" data-row-key="pinned-header">/);
@@ -121,41 +123,53 @@ test("the pinned header toggles the section and shows activity dots only while c
   assert.match(collapsed, /aria-expanded="false"><svg width="12" height="12"[^>]*stroke-width="3"[^>]*class="session-tree-chevron" aria-hidden="true">[\s\S]*?<\/svg><span class="session-tree-pinned-label">Pinned<\/span><span class="session-tree-pinned-count">· 3<\/span><span class="session-tree-pinned-dot is-running"/);
   assert.doesNotMatch(collapsed, /session-tree-group-icon/);
   assert.match(collapsed, /class="session-tree-pinned-dot is-running" role="img" title="Agent running…" aria-label="Agent running… \(1\)"/);
-  assert.match(collapsed, /class="session-tree-pinned-dot is-unread" role="img" title="New session activity" aria-label="New session activity \(2\)"/);
+  assert.doesNotMatch(collapsed, /session-tree-pinned-dot is-unread/);
   assert.doesNotMatch(collapsed, /session-tree-pinned-dot is-awaiting/);
   assert.doesNotMatch(collapsed, /session-tree-chevron is-open/);
 
   const expanded = rowMarkup(render({
-    rows: [{ kind: "pinned-header", key: "pinned-header", count: 3, collapsed: false, running: 1, awaiting: 1, unread: 2 }],
+    rows: [{ kind: "pinned-header", key: "pinned-header", count: 3, collapsed: false, running: 1, awaiting: 1 }],
   }), "pinned-header");
   assert.match(expanded, /aria-expanded="true"/);
   assert.match(expanded, /session-tree-chevron is-open/);
   assert.doesNotMatch(expanded, /session-tree-pinned-dot/);
 });
 
+test("the unread header reuses the pinned section's toggle and shows its count", () => {
+  const row = { kind: "unread-header", key: "unread-header", count: 3, collapsed: true, running: 1, awaiting: 0 };
+  const collapsed = rowMarkup(render({ rows: [row], emptyLabel: "No sessions found" }), row.key);
+  assert.match(collapsed, /class="session-tree-pinned-toggle" aria-expanded="false"/);
+  assert.match(collapsed, /class="session-tree-pinned-label">Unread<\/span><span class="session-tree-pinned-count">· 3<\/span>/);
+  assert.match(collapsed, /class="session-tree-pinned-dot is-running"/);
+  assert.doesNotMatch(collapsed, /session-tree-pinned-dot is-unread|No sessions found/);
+  const expanded = rowMarkup(render({ rows: [{ ...row, collapsed: false }] }), row.key);
+  assert.match(expanded, /aria-expanded="true"/);
+  assert.doesNotMatch(expanded, /session-tree-pinned-dot/);
+});
+
 test("a collapsed pinned header shows an awaiting dot of its own, without the running one", () => {
   const collapsed = rowMarkup(render({
-    rows: [{ kind: "pinned-header", key: "pinned-header", count: 2, collapsed: true, running: 0, awaiting: 2, unread: 0 }],
+    rows: [{ kind: "pinned-header", key: "pinned-header", count: 2, collapsed: true, running: 0, awaiting: 2 }],
   }), "pinned-header");
   assert.match(collapsed, /class="session-tree-pinned-dot is-awaiting" role="img" title="Agent waiting for your input" aria-label="Agent waiting for your input \(2\)"/);
   assert.doesNotMatch(collapsed, /session-tree-pinned-dot is-running/);
 });
 
 test("a collapsed group shows awaiting families apart from running ones", () => {
-  const mixed = rowMarkup(render({ rows: [groupRow({ expanded: false, running: 1, awaiting: 2, unread: 0 })] }), "group:/work/app");
+  const mixed = rowMarkup(render({ rows: [groupRow({ expanded: false, running: 1, awaiting: 2 })] }), "group:/work/app");
   assert.match(mixed, /aria-label="Agent running… \(1\)"/);
   assert.match(mixed, /<span class="session-tree-summary-awaiting" role="img" title="Agent waiting for your input" aria-label="Agent waiting for your input \(2\)"><span class="session-tree-summary-dot is-awaiting"><\/span>2<\/span>/);
 
   // Only awaiting: the amber count, no spinner.
-  const awaiting = rowMarkup(render({ rows: [groupRow({ expanded: false, running: 0, awaiting: 1, unread: 0 })] }), "group:/work/app");
+  const awaiting = rowMarkup(render({ rows: [groupRow({ expanded: false, running: 0, awaiting: 1 })] }), "group:/work/app");
   assert.match(awaiting, /session-tree-summary-awaiting/);
   assert.doesNotMatch(awaiting, /session-tree-summary-running/);
   assert.doesNotMatch(awaiting, /sidebar-spin/);
 });
 
-test("a collapsed group shows its running and unread counts and labelled actions", () => {
+test("a collapsed group shows its running count and labelled actions", () => {
   const html = rowMarkup(render({
-    rows: [groupRow({ expanded: false, running: 2, unread: 1 }, { pinned: true, current: false })],
+    rows: [groupRow({ expanded: false, running: 2 }, { pinned: true, current: false })],
   }), "group:/work/app");
   assert.match(html, /^<div class="session-tree-row session-tree-group" style="top:0;height:28px"/);
   assert.match(html, /<button type="button" class="session-tree-group-toggle" aria-expanded="false" title="\/work\/app">/);
@@ -167,15 +181,20 @@ test("a collapsed group shows its running and unread counts and labelled actions
   assert.doesNotMatch(html, /session-tree-group-icon/);
   assert.match(html, /<svg[^>]*class="session-tree-group-pin" role="img" aria-label="Pinned"/);
   assert.match(html, /aria-label="Agent running… \(2\)"/);
-  assert.match(html, /aria-label="New session activity \(1\)"/);
+  assert.doesNotMatch(html, /aria-label="New session activity/);
   assert.match(html, /aria-label="New session in app" title="New session in app"/);
   assert.match(html, /aria-label="app actions" title="app actions" aria-haspopup="menu" aria-expanded="false"/);
 
-  const expanded = rowMarkup(render({ rows: [groupRow({ expanded: true, running: 2, unread: 1 })] }), "group:/work/app");
+  const expanded = rowMarkup(render({ rows: [groupRow({ expanded: true, running: 2 })] }), "group:/work/app");
   assert.match(expanded, /session-tree-group is-current/);
   assert.match(expanded, /aria-expanded="true" title="\/work\/app"/);
   assert.doesNotMatch(expanded, /session-tree-summary/);
   assert.doesNotMatch(expanded, /session-tree-group-pin/);
+});
+
+test("project picker activity can still include unread counts", () => {
+  const html = decode(renderToStaticMarkup(h(ActivitySummary, { running: 0, unread: 2, t: (key) => key })));
+  assert.match(html, /class="session-tree-summary-unread" role="img" title="sidebar.newSessionActivity" aria-label="sidebar.newSessionActivity \(2\)"/);
 });
 
 test("a group's ⋯ shows its open menu; its + starts a session at once", () => {
@@ -241,6 +260,33 @@ test("an unread row shows the labelled unread dot", () => {
   assert.match(html, /<span class="session-tree-meta is-unread" title="New activity"><span class="session-tree-unread" role="img" aria-label="New session activity"><\/span><\/span>/);
 });
 
+test("a retained read row shows its state and a separate locate action", () => {
+  const row = sessionRow(session("read"), { context: "unread", status: { selected: true } });
+  const html = rowMarkup(render({ rows: [row] }), row.key);
+  assert.match(html, /session-tree-session is-selected is-retained/);
+  assert.match(html, /class="session-tree-read-status">Read<\/span>/);
+  assert.doesNotMatch(html, /class="session-tree-unread"/);
+  assert.match(html, /aria-label="Show first read in project app"/);
+  assert.ok(html.indexOf("</a>") < html.indexOf("session-tree-locate-action"), "the locate button is not nested in the link");
+  assert.doesNotMatch(html, /session-tree-quick-action/, "the retained row leaves room for locate");
+
+  const pinned = sessionRow(session("pin"), { context: "unread", status: { selected: true, pinned: true, running: true } });
+  const pinnedHtml = rowMarkup(render({ rows: [pinned] }), pinned.key);
+  assert.match(pinnedHtml, /aria-label="Show first pin in Pinned · app"/);
+  assert.match(pinnedHtml, /class="session-tree-read-status">Read<\/span>/);
+  assert.match(pinnedHtml, /sidebar-spin/);
+});
+
+test("an unread-section row shows both its project and status", () => {
+  const row = sessionRow(session("new"), { context: "unread", status: { unread: true, pinned: true } });
+  const html = rowMarkup(render({ rows: [row] }), row.key);
+  assert.match(html, /class="session-tree-meta is-unread has-project" title="New activity"><span class="session-tree-project">app<\/span><span class="session-tree-unread" role="img" aria-label="New session activity"/);
+  assert.match(html, /href="\?session=new"/);
+  const running = rowMarkup(render({ rows: [{ ...row, status: { ...row.status, running: true } }] }), row.key);
+  assert.match(running, /session-tree-project">app<\/span><svg[^>]*class="sidebar-spin"/);
+  assert.doesNotMatch(running, /session-tree-unread/);
+});
+
 test("an awaiting row shows the amber dot in the spinner's slot", () => {
   const html = rowMarkup(render({
     rows: [sessionRow(session("ask"), { status: { running: true, awaiting: true, unread: true } })],
@@ -280,6 +326,7 @@ test("every saved row's title links to its session, encoded, in every context an
   const cases = [
     [sessionRow(session("a/b?c&d #%")), "?session=a%2Fb%3Fc%26d%20%23%25"],
     [sessionRow(session("pin"), { context: "pinned" }), "?session=pin"],
+    [sessionRow(session("unread"), { context: "unread", status: { unread: true } }), "?session=unread"],
     [sessionRow(session("old"), { context: "archive" }), "?session=old"],
     [sessionRow(session("run"), { status: { running: true } }), "?session=run"],
     [sessionRow(session("ask"), { status: { running: true, awaiting: true } }), "?session=ask"],
@@ -390,6 +437,8 @@ test("show more, empty groups, footer links and archive groups", () => {
     ],
   });
   assert.match(rowMarkup(html, "pinned-more"), /<button type="button" class="session-tree-more-toggle" data-more-action="less">Show less<\/button><\/div>/);
+  const unreadMore = rowMarkup(render({ rows: [{ kind: "unread-more", key: "unread-more", hidden: 5, canShowLess: true, nextShown: 5 }] }), "unread-more");
+  assert.match(unreadMore, /data-more-action="more">Show more · 5<\/button><button type="button" class="session-tree-more-toggle" data-more-action="less">Show less<\/button>/);
   assert.doesNotMatch(rowMarkup(html, "pinned-more"), /data-more-action="more"/);
   assert.match(rowMarkup(html, "more:/work/app"), /<button type="button" class="session-tree-more-toggle" data-more-action="more">Show more · 3<\/button><\/div>/);
   assert.doesNotMatch(rowMarkup(html, "more:/work/app"), /data-more-action="less"/);
@@ -472,6 +521,7 @@ test("renders the model built from a catalog with unique row keys", () => {
     currentProject: { key: "/work/app", root: "/work/app" },
     groupExpansion: {},
     moreShown: {},
+    unreadCollapsed: false,
     pinnedCollapsed: false,
   });
   const html = render({ rows: model.rows });
@@ -561,9 +611,9 @@ test("headers lead with their chevron, and every row's text starts in one column
   // One rhythm: session rows, every header (a project's, the pinned
   // section's, the archive's projects), the empty note and the footer are
   // one height, 28px (44px on a phone); only "show more" is shorter.
-  assert.deepEqual(SIDEBAR_ROW_HEIGHTS.desktop, { "pinned-header": 28, session: 28, "pinned-more": 26, group: 28, "group-more": 26, "group-empty": 28, spacer: 8, "footer-open": 28, "footer-archived": 28, "archive-group": 28 });
+  assert.deepEqual(SIDEBAR_ROW_HEIGHTS.desktop, { "unread-header": 28, "pinned-header": 28, session: 28, "unread-more": 26, "pinned-more": 26, group: 28, "group-more": 26, "group-empty": 28, spacer: 8, "footer-open": 28, "footer-archived": 28, "archive-group": 28 });
   for (const [layout, height] of [["desktop", 28], ["mobile", 44]]) {
-    for (const kind of ["session", "group", "pinned-header", "group-empty", "footer-open", "footer-archived", "archive-group"]) {
+    for (const kind of ["session", "group", "unread-header", "pinned-header", "group-empty", "footer-open", "footer-archived", "archive-group"]) {
       assert.equal(SIDEBAR_ROW_HEIGHTS[layout][kind], height, `${layout} ${kind}`);
     }
   }

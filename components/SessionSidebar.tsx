@@ -23,6 +23,7 @@ import {
   keepOutgoingGroupOpen,
   nextProjectKeysToRecord,
   PINNED_MORE_KEY,
+  UNREAD_MORE_KEY,
   showLessFamilies,
   showMoreFamilies,
   type SidebarProject,
@@ -35,6 +36,7 @@ import {
   loadGroupExpansion,
   loadNonGitCwds,
   loadPinnedCollapsed,
+  loadUnreadCollapsed,
   loadShowIgnoredFiles,
   loadSidebarTab,
   rememberCwdGitStatus,
@@ -42,6 +44,7 @@ import {
   saveFilesCollapsed,
   saveGroupExpansion,
   savePinnedCollapsed,
+  saveUnreadCollapsed,
   saveShowIgnoredFiles,
   saveSidebarTab,
   type SidebarTab,
@@ -553,6 +556,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // Sessions whose subagents can still report back with a run there: not done yet (#1434).
   const [subagentsActiveSessionIds, setSubagentsActiveSessionIds] = useState<Set<string>>(() => new Set());
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(() => loadUnreadSessionIds());
+  // A read row stays in unread while this page still has that family open.
+  const [retainedUnreadRootId, setRetainedUnreadRootId] = useState<string | null>(null);
   const previousRunningSessionIdsRef = useRef<Set<string>>(new Set());
   const previousActiveSessionIdsRef = useRef<Set<string>>(new Set());
   const currentSuppressedCompletionSessionIdsRef = useRef<Set<string>>(new Set());
@@ -571,7 +576,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // only attributes and a few rows of their own differ, so a switch (the
   // setting, the phone breakpoint) never remounts the explorer, the tree or
   // the picker. The tab, the folded section, the group choices and the
-  // pinned section start as the server renders them and are restored from
+  // unread and pinned sections start as the server renders them and are restored from
   // browser storage after hydration; the layout's choice is read the same
   // way (useFilesPlacement's server snapshot).
   const filesPlacement = useFilesPlacement();
@@ -586,11 +591,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // Project groups: explicit expand/collapse choices (saved), the groups kept
   // open for the page after they stopped being current (keepOutgoingGroupOpen;
   // never saved), how many families "show more" has revealed per group
-  // (SHOW_MORE_STEP a click), the pinned section, the archive view.
+  // (SHOW_MORE_STEP a click), the unread and pinned sections, the archive view.
   const [groupExpansion, setGroupExpansion] = useState<Readonly<Record<string, boolean>>>({});
   const [keptOpenGroups, setKeptOpenGroups] = useState<ReadonlySet<string>>(() => new Set());
   const [moreShown, setMoreShown] = useState<Readonly<Record<string, number>>>({});
   const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
+  const [unreadCollapsed, setUnreadCollapsed] = useState(false);
   // The archive view's folded projects, per browser (lib/sidebar-prefs.ts).
   const [archiveCollapsed, setArchiveCollapsed] = useState<readonly string[]>([]);
   const [archiveView, setArchiveViewState] = useState(false);
@@ -745,6 +751,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     const groups = loadGroupExpansion();
     if (Object.keys(groups).length > 0) setGroupExpansion(groups);
     if (loadPinnedCollapsed()) setPinnedCollapsed(true);
+    if (loadUnreadCollapsed()) setUnreadCollapsed(true);
     const archiveFolds = loadArchiveCollapsed();
     if (archiveFolds.length > 0) setArchiveCollapsed(archiveFolds);
     if (loadFilesCollapsed()) setFilesCollapsed(true);
@@ -1383,6 +1390,17 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     () => new Map(sessionFamilies.map((family) => [family.root.id, family])),
     [sessionFamilies],
   );
+  // A switch, archive, deletion or a fresh unread marker ends this page's retention.
+  useEffect(() => {
+    setRetainedUnreadRootId((retained) => {
+      if (!retained) return retained;
+      const family = familyByRootId.get(retained);
+      if (!family || isFamilyArchived(family, uiState, runningSessionIds)) return null;
+      const ids = familyIds(family);
+      return selectedSessionId && ids.includes(selectedSessionId) && !ids.some((id) => unreadSessionIds.has(id))
+        ? retained : null;
+    });
+  }, [familyByRootId, selectedSessionId, unreadSessionIds, uiState, runningSessionIds]);
 
   // Every session id of an archived family (search tags them), and how many
   // families each project has in the archive.
@@ -1459,11 +1477,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     awaitingIds: awaitingInputSessionIds,
     unreadIds: unreadSessionIds,
     selectedSessionId,
+    retainedUnreadRootId,
     currentProject,
     groupExpansion: shownGroupExpansion,
     moreShown,
+    unreadCollapsed,
     pinnedCollapsed,
-  }), [allSessions, uiState, runningSessionIds, awaitingInputSessionIds, unreadSessionIds, selectedSessionId, currentProject, shownGroupExpansion, moreShown, pinnedCollapsed]);
+  }), [allSessions, uiState, runningSessionIds, awaitingInputSessionIds, unreadSessionIds, selectedSessionId, retainedUnreadRootId, currentProject, shownGroupExpansion, moreShown, unreadCollapsed, pinnedCollapsed]);
   // Built while the archive view is rendered, its way out included: it
   // leaves as it was, not empty.
   const archiveMounted = archiveMotion.archiveMounted;
@@ -1579,16 +1599,17 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     [],
   );
 
-  // A family's row where the tree shows it now (pinned, in its group, or in
-  // the open archive view), else the selected tab.
-  const familyRowButton = useCallback((rootId: string): HTMLElement | null => {
+  // A family's row where the tree shows it now, else a supplied section or
+  // group header, else the selected tab. Rows outside the virtual window are
+  // not mounted, so a moved row may need its header instead.
+  const familyRowButton = useCallback((rootId: string, fallback?: () => HTMLElement | null): HTMLElement | null => {
     const panel = sessionsPanelRef.current;
-    for (const context of ["pinned", "group", "archive"]) {
+    for (const context of ["unread", "pinned", "group", "archive"]) {
       const key = CSS.escape(`session:${context}:${rootId}`);
       const button = panel?.querySelector<HTMLElement>(`[data-row-key="${key}"] .session-tree-main`);
       if (button && button.getClientRects().length > 0) return button;
     }
-    return selectedTabButton();
+    return fallback?.() ?? selectedTabButton();
   }, [selectedTabButton]);
 
   // A project's group header (its toggle), else the selected tab.
@@ -1597,6 +1618,19 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     const button = sessionsPanelRef.current?.querySelector<HTMLElement>(`[data-row-key="${key}"] .session-tree-group-toggle`);
     return button && button.getClientRects().length > 0 ? button : selectedTabButton();
   }, [selectedTabButton]);
+
+  const sectionHeaderButton = useCallback((section: "unread" | "pinned"): HTMLElement | null => {
+    const button = sessionsPanelRef.current?.querySelector<HTMLElement>(`[data-row-key="${section}-header"] .session-tree-pinned-toggle`);
+    return button && button.getClientRects().length > 0 ? button : selectedTabButton();
+  }, [selectedTabButton]);
+
+  // Read/unread moves a row between sections. Give lost focus to the row in
+  // its new location, or its folded/unmounted destination's header.
+  const focusFamilyAfterMove = useCallback((row: SessionRow, destination: "unread" | "home") => {
+    focusAfterCommit(() => familyRowButton(row.family.root.id, () => destination === "unread"
+      ? sectionHeaderButton("unread")
+      : row.status.pinned ? sectionHeaderButton("pinned") : groupHeaderButton(row.project.key)));
+  }, [familyRowButton, focusAfterCommit, groupHeaderButton, sectionHeaderButton]);
 
   // Pin and archive changes apply at once and are saved in the background; a
   // refused save rolls back (useSessionUiState) and says why in a toast.
@@ -1992,8 +2026,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         ?? { head: t("sidebar.forkedToast", { title: shortTitle(title, TOAST_TITLE_MAX) }), tail: undefined };
       if (selectedSessionIdRef.current !== selectedAtClick) {
         // Another session was opened meanwhile: the user stays there. The
-        // copy waits in its group, unread (so it shows beyond the group's
-        // limit), and the toast offers to open it.
+        // copy waits in the unread section, and the toast offers to open it.
         setAllSessions((current) => (current.some((session) => session.id === forked.id) ? current : [forked, ...current]));
         setUnreadSessionIds((prev) => new Set(prev).add(forked.id));
         void loadSessions();
@@ -2029,8 +2062,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       case "unpin": setFamilyPinned(family, false); break;
       case "rename": startRename(family); break;
       case "fork": void forkFamily(row); break;
-      case "mark-read": markFamilyRead(family, true); break;
-      case "mark-unread": markFamilyRead(family, false); break;
+      case "mark-read": markFamilyRead(family, true); focusFamilyAfterMove(row, "home"); break;
+      case "mark-unread": markFamilyRead(family, false); focusFamilyAfterMove(row, "unread"); break;
       case "archive": archiveFamily(family); break;
       case "unarchive": restoreFamily(family); break;
       case "delete": requestDelete(family, shiftKey); break;
@@ -2242,9 +2275,44 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     ? (visibleRows.find((row): row is SessionRow => row.kind === "session" && row.key === menu.row.key) ?? menu.row)
     : null;
 
-  const handleSelectFamily = useCallback((family: SessionFamily) => {
-    handleSelectSessionFromList(family.root);
-  }, [handleSelectSessionFromList]);
+  const handleSelectFamily = useCallback((row: SessionRow) => {
+    // A phone closes the drawer after a pick. A retained row stays mounted,
+    // so release its focus rather than leave it inside the hidden drawer.
+    const active = document.activeElement;
+    if (isMobile && active instanceof HTMLElement && active.closest(`[data-row-key="${CSS.escape(row.key)}"]`)) {
+      active.blur();
+    }
+    if (row.context === "unread" && row.status.unread) {
+      // The key stays the same after marking read, so focus and position stay
+      // with this row. This also covers an already-selected family marked unread.
+      setRetainedUnreadRootId(row.family.root.id);
+      markFamilyRead(row.family, true);
+    }
+    handleSelectSessionFromList(row.family.root);
+  }, [handleSelectSessionFromList, isMobile, markFamilyRead]);
+
+  // An explicit locate leaves the retention, opens its real home and uses the
+  // virtual tree's reveal to keep the selected row visible and focusable.
+  const handleLocateRetained = useCallback((row: SessionRow) => {
+    setRetainedUnreadRootId(null);
+    if (row.status.pinned) {
+      setPinnedCollapsed(false);
+      savePinnedCollapsed(false);
+    } else {
+      const next = { ...groupExpansion };
+      delete next[row.project.key];
+      next[row.project.key] = true;
+      saveGroupChoices(next, [row.project.key]);
+    }
+    const fromRow = `[data-row-key="${CSS.escape(row.key)}"]`;
+    treeRevealIdRef.current += 1;
+    setTreeReveal({
+      id: treeRevealIdRef.current,
+      at: Date.now(),
+      rowKey: `session:${row.status.pinned ? "pinned" : "group"}:${row.family.root.id}`,
+      takeFocusFrom: (active) => active.closest(fromRow) !== null,
+    });
+  }, [groupExpansion, saveGroupChoices]);
 
   // Every group at once: a group's menu, or Alt+click on its header.
   // Re-inserted, so the choices count as the newest ones kept.
@@ -2276,17 +2344,25 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [groupExpansion, projectByKey, saveGroupChoices, setAllGroupsExpanded, shownGroupExpansion]);
 
   // The window a click opens is the one its row offers now (`nextShown`):
-  // decided at the click, by position, so a row that turns selected, unread
-  // or running later never shifts it.
+  // decided at the click, by position, so a row that turns selected or
+  // running later never shifts it.
   const handleShowMore = useCallback((key: string) => {
     const row = model.rows.find((item) => (item.kind === "group-more" && item.projectKey === key)
+      || (item.kind === "unread-more" && key === UNREAD_MORE_KEY)
       || (item.kind === "pinned-more" && key === PINNED_MORE_KEY));
-    if (row?.kind !== "group-more" && row?.kind !== "pinned-more") return;
+    if (row?.kind !== "group-more" && row?.kind !== "unread-more" && row?.kind !== "pinned-more") return;
     setMoreShown((prev) => showMoreFamilies(prev, key, row.nextShown));
   }, [model.rows]);
   const handleShowLess = useCallback((key: string) => {
     setMoreShown((prev) => showLessFamilies(prev, key));
   }, []);
+
+  const handleToggleUnread = () => {
+    const next = !unreadCollapsed;
+    setUnreadCollapsed(next);
+    saveUnreadCollapsed(next);
+    if (next) setMoreShown((shown) => showLessFamilies(shown, UNREAD_MORE_KEY));
+  };
 
   const handleTogglePinned = () => {
     const next = !pinnedCollapsed;
@@ -2652,9 +2728,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     confirmDeleteRootId,
     activeMenuRowKey,
     onSelectFamily: handleSelectFamily,
+    onLocateRetained: handleLocateRetained,
     onToggleGroup: handleToggleGroup,
     onShowMore: handleShowMore,
     onShowLess: handleShowLess,
+    onToggleUnread: handleToggleUnread,
     onTogglePinned: handleTogglePinned,
     onArchiveFamily: archiveFamily,
     onRestoreFamily: restoreFamily,

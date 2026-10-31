@@ -61,6 +61,7 @@ function treeInput(overrides = {}) {
     currentProject: null,
     groupExpansion: {},
     moreShown: {},
+    unreadCollapsed: false,
     pinnedCollapsed: false,
     ...overrides,
   };
@@ -110,7 +111,8 @@ test("subagents fold into their main session row, which carries their running, u
   }));
   const sessionRows = rows.filter((row) => row.kind === "session");
   assert.deepEqual(sessionRows.map((row) => row.family.root.id), ["main"]);
-  assert.deepEqual(sessionRows[0].status, { running: true, awaiting: false, unread: true, selected: true, transient: false });
+  assert.deepEqual(sessionRows[0].status, { running: true, awaiting: false, unread: true, pinned: false, selected: true, transient: false });
+  assert.equal(sessionRows[0].context, "unread");
 });
 
 test("only Shift skips the session deletion confirmation", () => {
