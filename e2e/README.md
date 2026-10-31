@@ -30,6 +30,7 @@ Coverage:
   the chat. A small session checks pagination through the root.
 - Branch context follows the selected leaf and excludes the other branch.
 - Markdown, code blocks, and real tool-call/tool-result blocks render.
+- Mermaid chat and Markdown previews show valid diagrams, repair only the supported flowchart quote errors without an inline success notice, and distinguish syntax, type, load and render errors. Original and corrected source copies, shape and ID preservation, failure cleanup, zoom, SVG download, themes, translations, mobile controls and the preprocessed size limit are checked.
 - Chat width and font size persist, existing drafts resize, and short settings
   panels keep every language option reachable on desktop and mobile.
 - Interface/chat and monospace font lists and weights apply live, survive

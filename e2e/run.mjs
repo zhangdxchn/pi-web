@@ -13,6 +13,7 @@ import { checkFilePanel, filePanelFixture } from "./file-panel.mjs";
 import { checkExtensionDialogSizing, checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
 import { checkCodeBackground } from "./code-background.mjs";
+import { checkMermaid, checkMermaidDiagramLoadingFailure, checkMermaidFile, checkMermaidLoadingFailure, checkMermaidRenderFailure, mermaidFixture, mermaidLimitFixture } from "./mermaid.mjs";
 import { checkModelDiscovery } from "./model-discovery.mjs";
 import { checkModelContext } from "./model-context.mjs";
 import { checkModelSelector } from "./model-selector.mjs";
@@ -32,6 +33,10 @@ const sessionDir = join(agentDir, "sessions", "e2e");
 mkdirSync(project);
 const previewFile = join(project, "preview.html");
 writeFileSync(previewFile, filePanelFixture);
+const mermaidFile = join(project, "mermaid.md");
+const mermaidLimitFile = join(project, "mermaid-limits.md");
+writeFileSync(mermaidFile, mermaidFixture);
+writeFileSync(mermaidLimitFile, mermaidLimitFixture);
 mkdirSync(sessionDir, { recursive: true });
 const timestamp = "2026-08-23T00:00:00.000Z";
 const LONG = "e2e-long-session";
@@ -40,6 +45,7 @@ const RICH = "e2e-rich-session";
 const COMPACTED = "e2e-compacted-session";
 const APPEND = "e2e-external-append-session";
 const CODE_BACKGROUND = "e2e-code-background";
+const MERMAID = "e2e-mermaid";
 const text = (i) => `E2E message ${String(i).padStart(4, "0")}`;
 const ids = (start, end) => Array.from({ length: end - start }, (_, i) => `e${start + i}`);
 
@@ -121,6 +127,10 @@ try {
       "```js\nconst x = 1;\n```\n\n```mermaid\ngraph TD\n A --> B\n```",
     }]),
   ]);
+  writeSession(MERMAID, [
+    message("user", null, "user", "E2E Mermaid diagnostics"),
+    message("answer", "user", "assistant", [{ type: "text", text: mermaidFixture }]),
+  ]);
   // The default page is 50 *visible* messages (user / assistant / compaction).
   // toolResults ride along free after #810, so 48 tool-call assistants + the
   // final answer + the divider fill that window; the user prompt is the 51st
@@ -190,7 +200,7 @@ try {
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) {
       const { sessions } = await response.json();
-      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, CODE_BACKGROUND, projectNavigation.id].sort());
+      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, CODE_BACKGROUND, MERMAID, projectNavigation.id].sort());
       break;
     }
     assert.ok(Date.now() < deadline, "Server readiness timed out; see server.log");
@@ -243,6 +253,25 @@ try {
   }
 
   browser = await chromium.launch();
+  context = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: "en-US" });
+  page = await context.newPage();
+  await checkMermaid(page, base, MERMAID);
+  await checkMermaidFile(page, mermaidFile, mermaidLimitFile);
+  await context.close();
+  context = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: "en-US" });
+  page = await context.newPage();
+  await checkMermaidLoadingFailure(page, base, BRANCH, MERMAID);
+  await context.close();
+  context = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: "en-US" });
+  page = await context.newPage();
+  await checkMermaidDiagramLoadingFailure(page, base, CODE_BACKGROUND, MERMAID);
+  await context.close();
+  context = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: "en-US" });
+  page = await context.newPage();
+  await checkMermaidRenderFailure(page, base, MERMAID);
+  await context.close();
+  context = undefined;
+  page = undefined;
   for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
     context = await browser.newContext({ viewport, locale: "en-US" });
     await context.tracing.start({ screenshots: true, snapshots: true });
