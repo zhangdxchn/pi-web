@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import type { GitCommitDetail, GitFileStatus, GitGraphCommit } from "@/lib/git-types";
 import { getFileName, getRelativeFilePath } from "@/lib/file-paths";
 import { formatCommitDate } from "@/lib/git-graph-model";
@@ -28,6 +28,95 @@ function LineStats({ additions, deletions }: { additions: number; deletions: num
   );
 }
 
+const FILE_ROW_HEIGHT = 28;
+const FILE_ROW_GAP = 3;
+const FILE_ROW_STEP = FILE_ROW_HEIGHT + FILE_ROW_GAP;
+const FILE_OVERSCAN = 10;
+
+/** Both working-tree and commit details share the drawer's scrollport. */
+function VirtualFileList<T extends { filePath: string }>({ files, scrollRef, renderFile }: {
+  files: T[];
+  scrollRef: RefObject<HTMLDivElement | null>;
+  renderFile: (file: T) => ReactNode;
+}) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const pendingFocus = useRef<number | null>(null);
+  const [viewport, setViewport] = useState({ top: 0, height: 500 });
+  const [focusedPath, setFocusedPath] = useState<string | null>(null);
+  const focusedIndex = useMemo(() => focusedPath === null ? -1 : files.findIndex((file) => file.filePath === focusedPath), [files, focusedPath]);
+
+  useEffect(() => {
+    const scroll = scrollRef.current;
+    const list = listRef.current;
+    if (!scroll || !list) return;
+    const sync = () => {
+      // The file count sits above the list in the positioned scrollport.
+      const top = Math.max(0, scroll.scrollTop - list.offsetTop);
+      const height = scroll.clientHeight || 500;
+      setViewport((current) => current.top === top && current.height === height ? current : { top, height });
+    };
+    sync();
+    scroll.addEventListener("scroll", sync, { passive: true });
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(sync);
+    observer?.observe(scroll);
+    return () => { scroll.removeEventListener("scroll", sync); observer?.disconnect(); };
+  }, [scrollRef]);
+
+  const top = Math.min(viewport.top, Math.max(0, files.length * FILE_ROW_STEP - viewport.height));
+  const start = Math.max(0, Math.floor(top / FILE_ROW_STEP) - FILE_OVERSCAN);
+  const end = Math.min(files.length, Math.ceil((top + viewport.height) / FILE_ROW_STEP) + FILE_OVERSCAN);
+  const indices: number[] = [];
+  // Keep focus when the user scrolls a working-file button out of view.
+  if (focusedIndex >= 0 && focusedIndex < start) indices.push(focusedIndex);
+  for (let index = start; index < end; index++) indices.push(index);
+  if (focusedIndex >= end) indices.push(focusedIndex);
+
+  useLayoutEffect(() => {
+    if (pendingFocus.current === null) return;
+    const button = listRef.current?.querySelector<HTMLButtonElement>(`[data-file-index="${pendingFocus.current}"] button`);
+    if (button) { pendingFocus.current = null; button.focus({ preventScroll: true }); }
+  });
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Tab" || event.altKey || event.ctrlKey || event.metaKey) return;
+    const row = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-file-index]") : null;
+    if (!row) return;
+    const index = Number(row.dataset.fileIndex);
+    const next = index + (event.shiftKey ? -1 : 1);
+    // Native Tab handles mounted neighbours; reveal an unmounted neighbour first.
+    if (next < 0 || next >= files.length || (next >= start && next < end)) return;
+    const scroll = scrollRef.current;
+    const list = listRef.current;
+    if (!scroll || !list) return;
+    event.preventDefault();
+    const rowTop = list.offsetTop + next * FILE_ROW_STEP;
+    if (rowTop < scroll.scrollTop) scroll.scrollTop = rowTop;
+    else if (rowTop + FILE_ROW_HEIGHT > scroll.scrollTop + scroll.clientHeight) {
+      scroll.scrollTop = rowTop + FILE_ROW_HEIGHT - scroll.clientHeight;
+    }
+    pendingFocus.current = next;
+    setViewport({ top: Math.max(0, scroll.scrollTop - list.offsetTop), height: scroll.clientHeight || 500 });
+  };
+
+  return (
+    <div ref={listRef} role="list" data-testid="git-graph-file-list"
+      onFocus={(event) => {
+        const row = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-file-index]") : null;
+        if (row) setFocusedPath(files[Number(row.dataset.fileIndex)]?.filePath ?? null);
+      }}
+      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFocusedPath(null); }}
+      onKeyDown={handleKeyDown}
+      style={{ position: "relative", height: Math.max(0, files.length * FILE_ROW_STEP - FILE_ROW_GAP) }}>
+      {indices.map((index) => (
+        <div key={files[index].filePath} role="listitem" aria-posinset={index + 1} aria-setsize={files.length} data-file-index={index}
+          style={{ position: "absolute", top: index * FILE_ROW_STEP, left: 0, right: 0, height: FILE_ROW_HEIGHT }}>
+          {renderFile(files[index])}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function GitGraphDetails(props: GitGraphDetailsProps) {
   const { cwd, height, onHeightChange, onClose } = props;
   const commit = props.kind === "commit" ? props.commit : null;
@@ -36,6 +125,7 @@ export function GitGraphDetails(props: GitGraphDetailsProps) {
   const [detail, setDetail] = useState<GitCommitDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [copiedSha, setCopiedSha] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!commitSha) return;
@@ -232,25 +322,23 @@ export function GitGraphDetails(props: GitGraphDetailsProps) {
       </div>
 
       {/* Content Area */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "6px 12px" }}>
+      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "6px 12px", position: "relative" }}>
         {props.kind === "working" ? (
           <div data-testid="git-graph-working-details">
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
               {t("gitGraph.changedFiles", { count: props.files.length })}
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-              {props.files.map((file) => (
+            <VirtualFileList files={props.files} scrollRef={scrollRef} renderFile={(file) => (
                 <button key={file.filePath} type="button" onClick={() => props.onOpenWorkingFile?.(file.filePath)}
                   title={file.filePath}
-                  style={{ display: "flex", alignItems: "center", gap: 7, width: "100%", padding: "4px 8px", borderRadius: 4, background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: 11.5, cursor: "pointer", textAlign: "left" }}>
+                  style={{ display: "flex", alignItems: "center", gap: 7, width: "100%", height: "100%", boxSizing: "border-box", padding: "4px 8px", borderRadius: 4, background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: 11.5, cursor: "pointer", textAlign: "left" }}>
                   <span title={t(`files.${file.status}`)} aria-label={t(`files.${file.status}`)} style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", width: 14, flexShrink: 0 }}>{file.code}</span>
                   <span style={{ display: "flex", flexShrink: 0, opacity: 0.85 }}>{getFileIcon(getFileName(file.filePath), 13)}</span>
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{getRelativeFilePath(file.filePath, cwd)}</span>
                   <LineStats additions={file.additions} deletions={file.deletions} />
                   <span style={{ fontSize: 10, color: "var(--accent)", flexShrink: 0 }}>{t("gitGraph.viewDiff")} ↗</span>
                 </button>
-              ))}
-            </div>
+              )} />
           </div>
         ) : loading ? (
           <div style={{ padding: "12px 0", fontSize: 11, color: "var(--text-dim)" }}>
@@ -265,8 +353,7 @@ export function GitGraphDetails(props: GitGraphDetailsProps) {
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
               {t("gitGraph.changedFiles", { count: detail.files.length })}
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-              {detail.files.map((file) => {
+            <VirtualFileList files={detail.files} scrollRef={scrollRef} renderFile={(file) => {
                 const name = file.filePath.split("/").pop() || file.filePath;
                 return (
                   <div
@@ -276,6 +363,8 @@ export function GitGraphDetails(props: GitGraphDetailsProps) {
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "space-between",
+                      height: "100%",
+                      boxSizing: "border-box",
                       padding: "4px 8px",
                       borderRadius: 4,
                       background: "var(--bg)",
@@ -316,8 +405,7 @@ export function GitGraphDetails(props: GitGraphDetailsProps) {
                     </div>
                   </div>
                 );
-              })}
-            </div>
+              }} />
           </div>
         )}
       </div>

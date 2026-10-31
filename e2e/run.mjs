@@ -24,6 +24,7 @@ import { checkGitGraphColumns } from "./git-graph-columns.mjs";
 import { checkGitGraphDiff, createGitGraphDiffFixture } from "./git-graph-diff.mjs";
 import { checkGitGraphActions, createGitGraphActionFixtures } from "./git-graph-actions.mjs";
 import { checkGitGraphUncommitted, createGitGraphUncommittedFixtures } from "./git-graph-uncommitted.mjs";
+import { checkGitGraphLargeFiles } from "./git-graph-large-files.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const mode = process.env.E2E_SERVER_MODE || "dev";
@@ -547,6 +548,7 @@ try {
   await checkGitGraphColumns({ browser, base, artifacts, fixture: projectNavigation });
   await checkGitGraphDiff({ browser, base, artifacts, fixture: gitGraphDiff });
   await checkGitGraphActions({ browser, base, artifacts, fixtures: gitGraphActions });
+  await checkGitGraphLargeFiles({ browser, base, artifacts, fixtures: gitGraphUncommitted });
   await checkGitGraphUncommitted({ browser, base, artifacts, fixtures: gitGraphUncommitted });
   await checkProjectNavigation({ browser, base, artifacts, fixture: projectNavigation, otherSessionId: BRANCH, api, post });
 } catch (error) {
