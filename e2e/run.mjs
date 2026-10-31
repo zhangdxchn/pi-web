@@ -25,6 +25,7 @@ import { checkGitGraphDiff, createGitGraphDiffFixture } from "./git-graph-diff.m
 import { checkGitGraphActions, createGitGraphActionFixtures } from "./git-graph-actions.mjs";
 import { checkGitGraphUncommitted, createGitGraphUncommittedFixtures } from "./git-graph-uncommitted.mjs";
 import { checkGitGraphLargeFiles } from "./git-graph-large-files.mjs";
+import { checkChangedFilesTree, createChangedFilesTreeFixture } from "./changed-files-tree.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const mode = process.env.E2E_SERVER_MODE || "dev";
@@ -158,6 +159,7 @@ try {
   const gitGraphDiff = createGitGraphDiffFixture({ agentDir });
   const gitGraphActions = createGitGraphActionFixtures({ agentDir });
   const gitGraphUncommitted = createGitGraphUncommittedFixtures({ agentDir });
+  const changedFilesTree = createChangedFilesTreeFixture({ agentDir });
 
   const probe = createServer();
   probe.listen(0, "127.0.0.1");
@@ -550,6 +552,7 @@ try {
   await checkGitGraphActions({ browser, base, artifacts, fixtures: gitGraphActions });
   await checkGitGraphLargeFiles({ browser, base, artifacts, fixtures: gitGraphUncommitted });
   await checkGitGraphUncommitted({ browser, base, artifacts, fixtures: gitGraphUncommitted });
+  await checkChangedFilesTree({ browser, base, artifacts, fixture: changedFilesTree });
   await checkProjectNavigation({ browser, base, artifacts, fixture: projectNavigation, otherSessionId: BRANCH, api, post });
 } catch (error) {
   console.error(error);

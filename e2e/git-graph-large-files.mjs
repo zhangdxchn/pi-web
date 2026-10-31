@@ -8,14 +8,14 @@ export async function checkGitGraphLargeFiles({ browser, base, artifacts, fixtur
   const count = 43_817;
   const suffix = (index) => String(index).padStart(5, "0");
   const commitFiles = Array.from({ length: count }, (_, index) => ({
-    filePath: index === count - 1 ? "head.txt" : `commit-file-${suffix(index)}.txt`,
+    filePath: index === count - 1 ? "head.txt" : `bulk/commit-file-${suffix(index)}.txt`,
     status: "modified", additions: 1, deletions: 1,
   }));
 
   for (const [index, mobile] of [false, true].entries()) {
     const fixture = fixtures[index];
     const files = Array.from({ length: count }, (_, i) => ({
-      filePath: join(fixture.root, i === count - 1 ? "working.txt" : `working-file-${suffix(i)}.txt`),
+      filePath: join(fixture.root, i === count - 1 ? "working.txt" : `bulk/working-file-${suffix(i)}.txt`),
       status: "modified", code: "M", indexStatus: " ", worktreeStatus: "M", additions: 1, deletions: 1,
     }));
     let statusFiles = files;
@@ -91,30 +91,68 @@ export async function checkGitGraphLargeFiles({ browser, base, artifacts, fixtur
         assert.ok(after && after.height > before.height + 50, "resizing expands the details viewport");
         await last.waitFor();
       }
+      // Tree mode must virtualize directory rows and files together as well.
+      await scroll.evaluate((element) => { element.scrollTop = 0; });
+      const workingSwitch = details.getByRole("group", { name: "Changed files view" });
+      await workingSwitch.getByRole("button", { name: "Tree", exact: true }).click();
+      const workingFolder = details.getByRole("button", { name: "bulk", exact: true });
+      await workingFolder.waitFor();
+      assert.equal(await workingFolder.getAttribute("aria-expanded"), "true");
+      await first.waitFor();
+      assert.ok(await details.getByTestId("git-graph-file-list").getByRole("button").count() < 150);
+      if (!mobile) await first.focus();
+      await scroll.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+      await last.waitFor();
+      assert.ok(await details.getByTestId("git-graph-file-list").getByRole("button").count() < 150);
+      if (!mobile) {
+        assert.equal(await first.evaluate((element) => document.activeElement === element), true);
+        await page.keyboard.press("Tab");
+        await second.waitFor();
+        assert.equal(await second.evaluate((element) => document.activeElement === element), true);
+      }
+      await scroll.evaluate((element) => { element.scrollTop = 0; });
+      await workingFolder.click();
+      assert.equal(await workingFolder.getAttribute("aria-expanded"), "false");
+      await last.waitFor();
+      await workingFolder.click();
+      await scroll.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+      await last.waitFor();
       await page.screenshot({ path: join(artifacts, `git-graph-large-working-${mobile ? "mobile" : "desktop"}.png`) });
       await last.click();
       await panel.getByRole("tab", { name: "working.txt", exact: true }).waitFor();
       await panel.locator(".file-diff-line-content").filter({ hasText: "updated working file" }).waitFor();
       await graphTab.click();
+      await scroll.evaluate((element) => { element.scrollTop = 0; });
+      await workingSwitch.getByRole("button", { name: "List", exact: true }).click();
       statusFiles = [files[0], files[1], files[count - 1]];
       await panel.getByRole("button", { name: "Refresh graph", exact: true }).click();
       await node.getByText("Uncommitted Changes (3)", { exact: true }).waitFor();
       await details.getByText("Changed files: 3", { exact: true }).waitFor();
       await first.waitFor();
       await last.waitFor();
-      assert.equal(await details.getByRole("button").count(), 3, "a shortened list does not retain the old scroll slice");
+      assert.equal(await details.getByTestId("git-graph-file-list").getByRole("button").count(), 3, "a shortened list does not retain the old scroll slice");
 
       await panel.getByTestId("git-graph-row").filter({ hasText: "Current HEAD" }).click();
       const commitHeader = panel.getByText(`Changed files: ${count}`, { exact: true });
       await commitHeader.waitFor();
-      const commitDetails = commitHeader.locator("..");
-      await commitDetails.getByText("commit-file-00000.txt", { exact: true }).waitFor();
-      assert.ok(await commitDetails.locator('[title^="commit-file-"]').count() < 150, "commit changes mount a bounded number of rows");
+      const commitDetails = commitHeader.locator("../..");
+      await commitDetails.getByText("bulk/commit-file-00000.txt", { exact: true }).waitFor();
+      assert.ok(await commitDetails.locator('[title^="bulk/commit-file-"]').count() < 150, "commit changes mount a bounded number of rows");
       const commitScroll = commitDetails.locator("..");
       await commitScroll.evaluate((element) => { element.scrollTop = element.scrollHeight; });
       const lastCommit = commitDetails.getByText("head.txt", { exact: true });
       await lastCommit.waitFor();
-      assert.ok(await commitDetails.locator('[title^="commit-file-"]').count() < 150, "commit changes remain bounded at the end");
+      assert.ok(await commitDetails.locator('[title^="bulk/commit-file-"]').count() < 150, "commit changes remain bounded at the end");
+      await commitScroll.evaluate((element) => { element.scrollTop = 0; });
+      await commitDetails.getByRole("group", { name: "Changed files view" }).getByRole("button", { name: "Tree", exact: true }).click();
+      const commitFolder = commitDetails.getByRole("button", { name: "bulk", exact: true });
+      await commitFolder.waitFor();
+      assert.equal(await commitFolder.getAttribute("aria-expanded"), "true");
+      await commitDetails.getByText("commit-file-00000.txt", { exact: true }).waitFor();
+      assert.ok(await commitDetails.getByTestId("git-graph-file-list").getByRole("button").count() < 150);
+      await commitScroll.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+      await lastCommit.waitFor();
+      assert.ok(await commitDetails.getByTestId("git-graph-file-list").getByRole("button").count() < 150);
       await page.screenshot({ path: join(artifacts, `git-graph-large-commit-${mobile ? "mobile" : "desktop"}.png`) });
       await lastCommit.click();
       await panel.getByRole("tab", { name: `head.txt · ${fixture.git("rev-parse", "HEAD").slice(0, 7)}`, exact: true }).waitFor();

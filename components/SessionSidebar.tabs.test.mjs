@@ -73,7 +73,7 @@ test("the tabs layout renders its tabs, no brand and no files section header", (
   assert.doesNotMatch(html, /aria-controls="file-search-input"/);
 });
 
-test("the files tab's keys: the folder's four, then the tree's two views, always the same", () => {
+test("the files tab's keys: the folder's actions, then the tree's two views", async () => {
   const row = actionsRow(render({ selectedCwd: "/work/alpha", onOpenTerminal: noop }));
   assert.match(row, /^<div class="sidebar-files-actions" role="group" aria-label="File actions">/);
   // The changes view is there without changes too, disabled, and its count
@@ -91,6 +91,19 @@ test("the files tab's keys: the folder's four, then the tree's two views, always
   assert.equal((row.match(/sidebar-files-views-start/g) ?? []).length, 1);
   // Their icons stay 14px here (the section header row's are 13px).
   assert.deepEqual([...row.matchAll(/<svg width="(\d+)" height="(\d+)"/g)].map((match) => `${match[1]}x${match[2]}`), Array(6).fill("14x14"));
+
+  // Git Graph adds a seventh key when its handler is available.
+  const withGraph = actionsRow(render({ selectedCwd: "/work/alpha", onOpenTerminal: noop, onOpenGitGraph: noop }));
+  assert.deepEqual(keyLabels(withGraph), [
+    "Open workspace terminal", "Git Graph", "Open in file manager", "Upload files to project root",
+    "Refresh file list", "Show ignored files pressed=false", "0 changed files (disabled) pressed=false",
+  ]);
+  assert.deepEqual([...withGraph.matchAll(/<svg width="(\d+)" height="(\d+)"/g)].map((match) => `${match[1]}x${match[2]}`), Array(7).fill("14x14"));
+  const css = await readFile(new URL("../app/sidebar.css", import.meta.url), "utf8");
+  const rowGap = Number(css.match(/\.sidebar-files-actions \{[^}]*gap: (\d+)px;/s)?.[1]);
+  const minKey = Number(css.match(/\.sidebar-tool-button \{[^}]*min-width: (\d+)px;/s)?.[1]);
+  assert.ok(rowGap > 0 && minKey > 0);
+  assert.ok(7 * minKey + 6 * rowGap <= 160, "all seven keys and their gaps fit at the 180px sidebar minimum");
 
   // Without a terminal (no onOpenTerminal) the other five stay; the files
   // tab leaves it out where the row below the sessions disables it.

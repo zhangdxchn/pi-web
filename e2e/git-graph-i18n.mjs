@@ -104,6 +104,7 @@ export async function checkGitGraphI18n({ browser, base, artifacts, fixture }) {
         all: "All branches", current: "Current branch: feature/demo", count: "Loaded: 40",
         remote: "Show remote branches", refresh: "Refresh graph", close: "Close details",
         parent: `Go to parent commit ${rootSha}`, files: "Changed files: 1", diff: "View Diff ↗",
+        changesView: "Changed files view", listView: "List", treeView: "Tree",
         load: "Load older commits (+500)", clear: "Clear commit search", copied: "Copied ✓", settings: "Settings", general: "General",
       },
       {
@@ -111,6 +112,7 @@ export async function checkGitGraphI18n({ browser, base, artifacts, fixture }) {
         all: "全部分支", current: "当前分支：feature/demo", count: "已加载：40",
         remote: "显示远端分支", refresh: "刷新图谱", close: "关闭详情",
         parent: `跳转至父提交 ${rootSha}`, files: "变更文件：1", diff: "查看 Diff ↗",
+        changesView: "变更文件视图", listView: "列表", treeView: "树形",
         load: "加载更早提交 (+500)", clear: "清除提交搜索", copied: "已复制 ✓", settings: "设置", general: "常规",
       },
       {
@@ -118,6 +120,7 @@ export async function checkGitGraphI18n({ browser, base, artifacts, fixture }) {
         all: "所有分支", current: "目前分支：feature/demo", count: "已載入：40",
         remote: "顯示遠端分支", refresh: "重新整理圖譜", close: "關閉詳情",
         parent: `前往父提交 ${rootSha}`, files: "變更檔案：1", diff: "檢視 Diff ↗",
+        changesView: "變更檔案檢視", listView: "清單", treeView: "樹狀",
         load: "載入更早的提交 (+500)", clear: "清除提交搜尋", copied: "已複製 ✓", settings: "設定", general: "一般",
       },
     ];
@@ -142,6 +145,15 @@ export async function checkGitGraphI18n({ browser, base, artifacts, fixture }) {
       await panel.getByTestId("git-graph-body").getByText(variant.count, { exact: true }).waitFor({ state: "attached" });
       await panel.getByText(variant.files, { exact: true }).waitFor();
       await panel.getByText(variant.diff, { exact: true }).waitFor();
+      const changesView = panel.getByRole("group", { name: variant.changesView });
+      const listView = changesView.getByRole("button", { name: variant.listView, exact: true });
+      const treeView = changesView.getByRole("button", { name: variant.treeView, exact: true });
+      assert.equal(await listView.getAttribute("aria-pressed"), "true");
+      const requestCount = requests.length;
+      await treeView.click();
+      await panel.getByText("unchanged-name.ts", { exact: true }).waitFor();
+      await listView.click();
+      assert.equal(requests.length, requestCount, "Changing the file view must not reload details");
       await panel.getByRole("button", { name: variant.load, exact: true }).waitFor({ state: "attached" });
       assert.equal(await panel.getByTitle(variant.parent, { exact: true }).count(), 1);
       await panel.getByTitle(childSha, { exact: true }).click();
