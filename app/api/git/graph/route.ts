@@ -1,4 +1,5 @@
 import fs from "fs";
+import path from "path";
 import { NextRequest, NextResponse } from "next/server";
 import {
   getAllowedFileRoots,
@@ -9,9 +10,13 @@ import {
 import {
   assertSafeRef,
   assertSafeSha,
+  findGitRepositoryRoot,
   getGitCommitDetail,
+  getGitCommitFileDiff,
   getGitGraph,
 } from "@/lib/git-graph";
+import { isDiffPathAllowed } from "@/lib/git-diff-access";
+import { hasParentDirectorySegment } from "@/lib/path-security";
 
 export async function GET(request: NextRequest) {
   try {
@@ -38,15 +43,34 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    // 1. Commit detail query
+    // Commit paths from Git are relative to the repository root, not cwd.
     const sha = request.nextUrl.searchParams.get("sha")?.trim();
+    const filePath = request.nextUrl.searchParams.get("path");
+    if (filePath !== null && (!sha || !filePath || path.isAbsolute(filePath)
+      || isWindowsAbsolutePath(filePath) || hasParentDirectorySegment(filePath))) {
+      return NextResponse.json({ error: "A commit SHA and repository-relative path are required" }, { status: 400 });
+    }
     if (sha) {
       assertSafeSha(sha);
       const detail = await getGitCommitDetail(cwd, sha);
       if (!detail) {
         return NextResponse.json({ error: "Commit not found" }, { status: 404 });
       }
-      return NextResponse.json(detail);
+      if (filePath === null) return NextResponse.json(detail);
+
+      const repoRoot = await findGitRepositoryRoot(cwd);
+      if (!repoRoot) return NextResponse.json({ error: "Repository not found" }, { status: 404 });
+      const allowedTarget = (relative: string) => {
+        const target = path.resolve(repoRoot, relative);
+        return isFilePathAllowed(target, new Set([repoRoot])) && isDiffPathAllowed(target, allowedRoots);
+      };
+      if (!allowedTarget(filePath)) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+      const file = detail.files.find((change) => change.filePath === filePath);
+      if (!file) return NextResponse.json({ error: "File not found in commit" }, { status: 404 });
+      if (file.originalPath && !allowedTarget(file.originalPath)) {
+        return NextResponse.json({ error: "Access denied" }, { status: 403 });
+      }
+      return NextResponse.json({ patch: await getGitCommitFileDiff(repoRoot, sha, file) });
     }
 
     // 2. Commit graph query

@@ -28,6 +28,12 @@ export interface GitFileDiffResponse {
   patch?: string;
 }
 
+export interface GitCommitDiff {
+  cwd: string;
+  sha: string;
+  filePath: string;
+}
+
 export type GitGraphRefType = "head" | "branch" | "tag" | "remote";
 
 export interface GitGraphRef {
@@ -57,6 +63,8 @@ export interface GitGraphData {
 
 export interface GitCommitFileChange {
   filePath: string;
+  /** The previous repository-relative path when Git detects a rename. */
+  originalPath?: string;
   status: GitFileStatusKind;
   additions: number;
   deletions: number;

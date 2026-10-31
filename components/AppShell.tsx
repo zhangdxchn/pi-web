@@ -20,6 +20,7 @@ import { DebugPanel, DebugPanelBoundary } from "./DebugPanel";
 import { SubagentViewer } from "./SubagentViewer";
 import { TerminalPanel } from "./TerminalPanel";
 import { GitGraphView } from "./git-graph/GitGraphView";
+import { GitCommitDiffViewer } from "./git-graph/GitCommitDiffViewer";
 import { newTerminalTab, restoreTerminalTabs, TERMINAL_TABS_KEY, type TerminalTab } from "./terminal-tab-state";
 import { useTheme } from "@/hooks/useTheme";
 import { useFontPreferences } from "@/hooks/useFontPreferences";
@@ -1264,6 +1265,20 @@ export function AppShell() {
     if (isMobile) setSidebarOpen(false);
   }, [activeCwd, handleCwdChange, isMobile]);
 
+  const handleOpenCommitDiff = useCallback((filePath: string, sha: string) => {
+    if (!activeCwd) return;
+    const tabId = `file:git-commit:${JSON.stringify([activeCwd, sha, filePath])}`;
+    setFileTabs((tabs) => tabs.some((tab) => tab.id === tabId) ? tabs : [...tabs, {
+      id: tabId,
+      label: `${getFileName(filePath)} · ${sha.slice(0, 7)}`,
+      filePath,
+      commitDiff: { cwd: activeCwd, sha, filePath },
+    }]);
+    setActiveFileTabId(tabId);
+    setRightPanelOpen(true);
+    if (isMobile) setSidebarOpen(false);
+  }, [activeCwd, isMobile]);
+
   // Subagent work opens in a right-panel tab instead of hijacking the main chat.
   const handleOpenSubagentTab = useCallback((sessionId: string, label: string) => {
     setAgentTabs((prev) => prev.some((tab) => tab.sessionId === sessionId) ? prev : [...prev, { sessionId, label }]);
@@ -1292,12 +1307,14 @@ export function AppShell() {
   const handleTerminalClosed = (tab: TerminalTab) => {
     const replacement = tab.closing === "restart" ? newTerminalTab(tab.cwd) : null;
     const remaining = terminalTabs.filter((item) => item.id !== tab.id);
+    const graphId = gitGraphOpen && activeCwd ? "git-graph" : null;
     setTerminalTabs((tabs) => tabs.flatMap((item) => item.id !== tab.id ? [item] : replacement ? [replacement] : []));
-    setActiveFileTabId((current) => current !== tab.id ? current : replacement?.id ?? remaining.at(-1)?.id ?? fileTabs.at(-1)?.id ?? lastAgentTabId(agentTabs));
-    if (!replacement && !remaining.length && !fileTabs.length && !agentTabs.length) setRightPanelOpen(false);
+    setActiveFileTabId((current) => current !== tab.id ? current : replacement?.id ?? remaining.at(-1)?.id ?? fileTabs.at(-1)?.id ?? lastAgentTabId(agentTabs) ?? graphId);
+    if (!replacement && !remaining.length && !fileTabs.length && !agentTabs.length && !graphId) setRightPanelOpen(false);
   };
 
   const handleCloseFileTab = useCallback((tabId: string) => {
+    const graphId = gitGraphOpen && activeCwd ? "git-graph" : null;
     if (tabId === "git-graph") {
       setGitGraphOpen(false);
       setActiveFileTabId((cur) => {
@@ -1316,22 +1333,19 @@ export function AppShell() {
       setAgentTabs(remainingAgents);
       setActiveFileTabId((cur) => {
         if (cur !== tabId) return cur;
-        return fileTabs.at(-1)?.id ?? terminalTabs.at(-1)?.id ?? lastAgentTabId(remainingAgents);
+        return fileTabs.at(-1)?.id ?? terminalTabs.at(-1)?.id ?? lastAgentTabId(remainingAgents) ?? graphId;
       });
-      if (fileTabs.length === 0 && terminalTabs.length === 0 && remainingAgents.length === 0) setRightPanelOpen(false);
+      if (fileTabs.length === 0 && terminalTabs.length === 0 && remainingAgents.length === 0 && !graphId) setRightPanelOpen(false);
       return;
     }
-    setFileTabs((prev) => {
-      const next = prev.filter((t) => t.id !== tabId);
-      if (next.length === 0 && terminalTabs.length === 0 && agentTabs.length === 0) setRightPanelOpen(false);
-      return next;
-    });
+    const remaining = fileTabs.filter((tab) => tab.id !== tabId);
+    setFileTabs((tabs) => tabs.filter((tab) => tab.id !== tabId));
+    if (remaining.length === 0 && terminalTabs.length === 0 && agentTabs.length === 0 && !graphId) setRightPanelOpen(false);
     setActiveFileTabId((cur) => {
       if (cur !== tabId) return cur;
-      const remaining = fileTabs.filter((t) => t.id !== tabId);
-      return remaining.at(-1)?.id ?? terminalTabs.at(-1)?.id ?? lastAgentTabId(agentTabs);
+      return remaining.at(-1)?.id ?? terminalTabs.at(-1)?.id ?? lastAgentTabId(agentTabs) ?? graphId;
     });
-  }, [fileTabs, terminalTabs, agentTabs]);
+  }, [fileTabs, terminalTabs, agentTabs, gitGraphOpen, activeCwd]);
 
   const handleViewFullHistory = useCallback(() => {
     if (!selectedSession) return;
@@ -2864,13 +2878,15 @@ export function AppShell() {
           </button>
         </div>
 
-        {/* Only the active viewer is mounted. Lightweight per-tab state is restored on activation. */}
+        {/* File viewers unmount when inactive; the graph keeps its selection and scroll until closed. */}
         <div style={{ flex: 1, minHeight: 0, overflow: "hidden", paddingBottom: "env(safe-area-inset-bottom)" }}>
-          {activeFileTabId === "git-graph" && activeCwd ? (
-            <GitGraphView
-              cwd={activeCwd}
-              onOpenFileDiff={(filePath) => handleOpenFile(filePath, getFileName(filePath), { modeHint: "diff" })}
-            />
+          {gitGraphOpen && activeCwd && (
+            <div hidden={activeFileTabId !== "git-graph"} style={{ height: "100%" }}>
+              <GitGraphView cwd={activeCwd} onOpenFileDiff={handleOpenCommitDiff} />
+            </div>
+          )}
+          {activeFileTab?.commitDiff ? (
+            <GitCommitDiffViewer key={activeFileTab.id} {...activeFileTab.commitDiff} />
           ) : activeFileTab?.filePath ? (
             <FileViewer
               key={`${fileWorkspaceGeneration}:${activeFileTab.id}:${activeFileTab.viewerRevision ?? 0}`}

@@ -57,7 +57,8 @@ Coverage:
 - Git Graph follows Settings' English, Simplified and Traditional Chinese choices
   live without reloading its data or losing its search; loading, pagination,
   commit details, errors and the saved language on mobile are checked with a
-  scripted API.
+  scripted API. A real repository checks historical file diffs, separate commit
+  tabs, and returning to the selected graph on desktop and mobile.
   Column tests cover resizing by mouse, keyboard and touch, saved widths,
   narrow-panel horizontal scrolling, and header and virtual-row alignment.
 - The model picker, with a synthetic catalog: on a phone, a simulated keyboard

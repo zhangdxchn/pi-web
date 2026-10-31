@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { getFileIcon } from "./FileIcons";
 import { useI18n } from "@/hooks/useI18n";
 import type { FileViewerDisplayMode, FileViewerState } from "@/lib/file-viewer-state";
+import { getFileName } from "@/lib/file-paths";
+import type { GitCommitDiff } from "@/lib/git-types";
 
 export interface Tab {
   id: string;
@@ -11,6 +13,7 @@ export interface Tab {
   filePath: string;
   kind?: "terminal" | "agent" | "git-graph";
   closing?: boolean;
+  commitDiff?: GitCommitDiff;
   sourceSessionId?: string | null;
   initialDisplayMode?: FileViewerDisplayMode;
   /** PDF page requested by the link that opened this tab (`#page=N`). */
@@ -139,7 +142,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="9" r="3" /><path d="M6 9v6M18 12a9 9 0 0 1-9 9" />
                 </svg>
-              ) : getFileIcon(tab.label, 13)}
+              ) : getFileIcon(tab.commitDiff ? getFileName(tab.filePath) : tab.label, 13)}
             </span>
             <span
               style={{

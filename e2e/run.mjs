@@ -21,6 +21,7 @@ import { checkSessionNavigation } from "./session-navigation.mjs";
 import { checkProjectNavigation, createProjectNavigationFixtures } from "./project-navigation.mjs";
 import { checkGitGraphI18n } from "./git-graph-i18n.mjs";
 import { checkGitGraphColumns } from "./git-graph-columns.mjs";
+import { checkGitGraphDiff, createGitGraphDiffFixture } from "./git-graph-diff.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const mode = process.env.E2E_SERVER_MODE || "dev";
@@ -151,6 +152,7 @@ try {
   ]);
 
   const projectNavigation = createProjectNavigationFixtures({ agentDir, sessionDir, timestamp });
+  const gitGraphDiff = createGitGraphDiffFixture({ agentDir });
 
   const probe = createServer();
   probe.listen(0, "127.0.0.1");
@@ -539,6 +541,7 @@ try {
   });
   await checkGitGraphI18n({ browser, base, artifacts, fixture: projectNavigation });
   await checkGitGraphColumns({ browser, base, artifacts, fixture: projectNavigation });
+  await checkGitGraphDiff({ browser, base, artifacts, fixture: gitGraphDiff });
   await checkProjectNavigation({ browser, base, artifacts, fixture: projectNavigation, otherSessionId: BRANCH, api, post });
 } catch (error) {
   console.error(error);

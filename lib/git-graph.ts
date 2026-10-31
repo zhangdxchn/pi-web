@@ -250,6 +250,19 @@ export async function getGitGraph(
   };
 }
 
+export async function getGitCommitFileDiff(
+  repoRoot: string,
+  sha: string,
+  file: GitCommitFileChange,
+): Promise<string> {
+  assertSafeSha(sha);
+  return git(repoRoot, [
+    "--literal-pathspecs", "show", "--format=", "--first-parent", "--find-renames",
+    "--no-color", "--no-ext-diff", "--unified=3", sha, "--",
+    ...(file.originalPath ? [file.originalPath] : []), file.filePath,
+  ]);
+}
+
 export async function getGitCommitDetail(
   cwd: string,
   sha: string,
@@ -279,6 +292,9 @@ export async function getGitCommitDetail(
     numstatOutput = await git(repoRoot, [
       "show",
       "--numstat",
+      "-z",
+      "--first-parent",
+      "--find-renames",
       "--format=",
       sha,
     ]);
@@ -291,6 +307,9 @@ export async function getGitCommitDetail(
     statusOutput = await git(repoRoot, [
       "show",
       "--name-status",
+      "-z",
+      "--first-parent",
+      "--find-renames",
       "--format=",
       sha,
     ]);
@@ -298,39 +317,47 @@ export async function getGitCommitDetail(
     statusOutput = "";
   }
 
-  const statusByPath = new Map<string, GitFileStatusKind>();
-  for (const line of statusOutput.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const parts = trimmed.split(/\s+/);
-    const code = parts[0]?.[0]?.toUpperCase();
-    const filePath = parts[1] ?? "";
+  // The -z forms preserve spaces, tabs and Unicode. A rename has two paths
+  // after its status, and an empty path followed by both names in numstat.
+  const statusByPath = new Map<string, { status: GitFileStatusKind; originalPath?: string }>();
+  const statuses = statusOutput.split("\0");
+  for (let i = 0; i < statuses.length;) {
+    const code = statuses[i++]?.[0]?.toUpperCase();
+    if (!code) continue;
+    const firstPath = statuses[i++];
+    const renamed = code === "R" || code === "C";
+    const filePath = renamed ? statuses[i++] : firstPath;
     if (!filePath) continue;
-
-    let kind: GitFileStatusKind = "modified";
-    if (code === "A") kind = "added";
-    else if (code === "D") kind = "deleted";
-    else if (code === "R") kind = "renamed";
-    else if (code === "U") kind = "conflict";
-    statusByPath.set(filePath, kind);
+    let status: GitFileStatusKind = "modified";
+    if (code === "A") status = "added";
+    else if (code === "D") status = "deleted";
+    else if (renamed) status = "renamed";
+    else if (code === "U") status = "conflict";
+    statusByPath.set(filePath, { status, ...(renamed ? { originalPath: firstPath } : {}) });
   }
 
   const files: GitCommitFileChange[] = [];
-  for (const line of numstatOutput.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const parts = trimmed.split("\t");
-    if (parts.length < 3) continue;
-    const [addStr, delStr, filePath] = parts;
-    const additions = addStr === "-" ? 0 : Number(addStr) || 0;
-    const deletions = delStr === "-" ? 0 : Number(delStr) || 0;
-    const status = statusByPath.get(filePath) ?? "modified";
-
+  const stats = numstatOutput.split("\0");
+  for (let i = 0; i < stats.length;) {
+    const entry = stats[i++];
+    const firstTab = entry.indexOf("\t");
+    const secondTab = entry.indexOf("\t", firstTab + 1);
+    if (firstTab < 0 || secondTab < 0) continue;
+    const addStr = entry.slice(0, firstTab);
+    const delStr = entry.slice(firstTab + 1, secondTab);
+    let filePath = entry.slice(secondTab + 1);
+    if (!filePath) {
+      i++; // old path of a rename
+      filePath = stats[i++];
+    }
+    if (!filePath) continue;
+    const change = statusByPath.get(filePath);
     files.push({
       filePath,
-      status,
-      additions,
-      deletions,
+      ...(change?.originalPath ? { originalPath: change.originalPath } : {}),
+      status: change?.status ?? "modified",
+      additions: addStr === "-" ? 0 : Number(addStr) || 0,
+      deletions: delStr === "-" ? 0 : Number(delStr) || 0,
     });
   }
 

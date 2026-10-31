@@ -92,6 +92,107 @@ test("returns commit details when sha param is provided", async () => {
   assert.equal(detail.files[0].additions, 1);
 });
 
+function graphRequest(cwd, params) {
+  const url = new URL("http://localhost/api/git/graph");
+  url.searchParams.set("cwd", cwd);
+  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+  return GET(new NextRequest(url));
+}
+
+test("returns a selected commit's file diff, independent of the current worktree and cwd", async () => {
+  const repo = fixture();
+  const initial = git(repo, "rev-parse", "HEAD").trim();
+  const nested = path.join(repo, "nested");
+  fs.mkdirSync(nested);
+  fs.writeFileSync(path.join(repo, "file.txt"), "committed change\n");
+  git(repo, "add", "file.txt");
+  git(repo, "commit", "-qm", "change file");
+  const selected = git(repo, "rev-parse", "HEAD").trim();
+  fs.writeFileSync(path.join(repo, "file.txt"), "uncommitted change\n");
+
+  const response = await graphRequest(nested, { sha: selected, path: "file.txt" });
+  assert.equal(response.status, 200);
+  const { patch } = await response.json();
+  assert.match(patch, /-hello world/);
+  assert.match(patch, /\+committed change/);
+  assert.doesNotMatch(patch, /uncommitted change/);
+
+  const rootPatch = await (await graphRequest(repo, { sha: initial, path: "file.txt" })).json();
+  assert.match(rootPatch.patch, /\+hello world/);
+  fs.unlinkSync(path.join(repo, "file.txt"));
+  const deletedWorkingFile = await graphRequest(repo, { sha: selected, path: "file.txt" });
+  assert.equal(deletedWorkingFile.status, 200);
+  assert.match((await deletedWorkingFile.json()).patch, /\+committed change/);
+  git(repo, "add", "-A");
+  git(repo, "commit", "-qm", "delete file");
+  const deletedSha = git(repo, "rev-parse", "HEAD").trim();
+  const deletion = await graphRequest(repo, { sha: deletedSha, path: "file.txt" });
+  assert.equal(deletion.status, 200);
+  assert.match((await deletion.json()).patch, /-committed change/);
+});
+
+test("commit details and diffs preserve spaces, Unicode and rename paths", async () => {
+  const repo = fixture();
+  const oldPath = "old name.txt";
+  const newPath = "新 name.txt";
+  const original = Array.from({ length: 12 }, (_, index) => `line ${index}\n`).join("");
+  fs.writeFileSync(path.join(repo, oldPath), original);
+  git(repo, "add", oldPath);
+  git(repo, "commit", "-qm", "add file");
+  git(repo, "mv", oldPath, newPath);
+  fs.writeFileSync(path.join(repo, newPath), original.replace("line 5\n", "renamed line\n"));
+  git(repo, "add", newPath);
+  git(repo, "commit", "-qm", "rename file");
+  const sha = git(repo, "rev-parse", "HEAD").trim();
+
+  const detail = await (await graphRequest(repo, { sha })).json();
+  const renamed = detail.files.find((file) => file.filePath === newPath);
+  assert.ok(renamed, "commit details must expose the actual new path");
+  assert.equal(renamed.status, "renamed");
+  assert.equal(renamed.originalPath, oldPath);
+  const response = await graphRequest(repo, { sha, path: newPath });
+  assert.equal(response.status, 200);
+  const { patch } = await response.json();
+  assert.match(patch, /rename from old name\.txt/);
+  assert.match(patch, /-line 5/);
+  assert.match(patch, /\+renamed line/);
+});
+
+test("merge commits compare against the first parent", async () => {
+  const repo = fixture();
+  const main = git(repo, "branch", "--show-current").trim();
+  git(repo, "checkout", "-qb", "topic");
+  fs.writeFileSync(path.join(repo, "file.txt"), "topic change\n");
+  git(repo, "add", "file.txt");
+  git(repo, "commit", "-qm", "topic change");
+  git(repo, "checkout", "-q", main);
+  git(repo, "merge", "--no-ff", "-qm", "merge topic", "topic");
+  const sha = git(repo, "rev-parse", "HEAD").trim();
+  const detail = await (await graphRequest(repo, { sha })).json();
+  assert.ok(detail.files.some((file) => file.filePath === "file.txt"));
+  const response = await graphRequest(repo, { sha, path: "file.txt" });
+  assert.equal(response.status, 200);
+  const { patch } = await response.json();
+  assert.match(patch, /-hello world/);
+  assert.match(patch, /\+topic change/);
+});
+
+test("historical diffs refuse traversal and paths through an outside symlink", async () => {
+  const repo = fixture();
+  const sha = git(repo, "rev-parse", "HEAD").trim();
+  for (const target of ["../outside.txt", path.join(repo, "file.txt")]) {
+    const response = await graphRequest(repo, { sha, path: target });
+    assert.ok([400, 403].includes(response.status), target);
+  }
+  if (process.platform !== "win32") {
+    const outside = fs.mkdtempSync(path.join(base, "outside-"));
+    fs.writeFileSync(path.join(outside, "secret.txt"), "outside secret\n");
+    fs.symlinkSync(outside, path.join(repo, "linked"), "dir");
+    const response = await graphRequest(repo, { sha, path: "linked/secret.txt" });
+    assert.equal(response.status, 403);
+  }
+});
+
 test("rejects unsafe branch or sha parameters", async () => {
   const repo = fixture();
 
