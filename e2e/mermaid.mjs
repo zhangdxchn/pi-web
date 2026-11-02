@@ -183,8 +183,16 @@ export async function checkMermaid(page, base, sessionId) {
 /** Markdown file previews use the same Mermaid rendering and diagnostics. */
 export async function checkMermaidFile(page, filePath, limitFilePath) {
   const showSidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
+  const hideSidebar = page.getByRole("button", { name: "Hide sidebar", exact: true });
   const openFile = async (path) => {
-    if (await showSidebar.isVisible()) await showSidebar.click();
+    // The mobile-to-desktop breakpoint can reopen the sidebar between an
+    // isVisible check and a click, as in the main E2E runner.
+    await hideSidebar.or(showSidebar).waitFor({ state: "visible" });
+    for (let attempt = 0; attempt < 5 && !(await hideSidebar.isVisible()); attempt++) {
+      await showSidebar.click({ timeout: 1_000 }).catch(() => {});
+      await page.waitForTimeout(200);
+    }
+    await hideSidebar.waitFor({ state: "visible" });
     await showSidebarFiles(page);
     await page.getByTitle(path.replace(/\\/g, "/"), { exact: true }).click();
   };
