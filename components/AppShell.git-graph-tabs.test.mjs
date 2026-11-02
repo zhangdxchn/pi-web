@@ -6,7 +6,7 @@ import vm from "node:vm";
 
 const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
 const start = source.indexOf("  const handleTerminalClosed =");
-const end = source.indexOf("  const handleViewFullHistory =", start);
+const end = source.indexOf("  // One session, one chat:", start);
 assert.notEqual(start, -1);
 assert.notEqual(end, -1);
 const callbacks = source.slice(start, end);

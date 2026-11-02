@@ -24,6 +24,19 @@ function styles(html, role) {
     })));
 }
 
+test("side chats and Git Graph have distinct tabs when open together", () => {
+  const tabs = [
+    { id: "agent:one", kind: "side", label: "Side question", filePath: "" },
+    { id: "git-graph", kind: "git-graph", label: "Git Graph", filePath: "/p" },
+  ];
+  const html = renderToStaticMarkup(React.createElement(I18nProvider, null,
+    React.createElement(TabBar, { tabs, activeTabId: "git-graph", onSelectTab() {}, onCloseTab() {} })));
+  assert.match(html, /role="tab" aria-label="Side chat"/);
+  assert.match(html, /role="tab" aria-label="Git Graph"/);
+  assert.match(html, /M21 12a8 8 0 0 1-8 8/);
+  assert.match(html, /<circle cx="6" cy="6" r="3"/);
+});
+
 test("overflowing tabs keep the whole 36px bar: the strip has no scrollbar", () => {
   // The app's 10px (6px on touch) scrollbar took its height out of the 36px
   // bar: 36px tabs were clipped (#1225), stretched ones squeezed to 26px.

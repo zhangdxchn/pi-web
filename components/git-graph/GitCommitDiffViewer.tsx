@@ -43,7 +43,7 @@ export function GitCommitDiffViewer({ cwd, sha, filePath }: GitCommitDiff) {
         <span className="file-viewer-meta" title={sha}>{sha.slice(0, 7)}</span>
       </div>
       <div className="file-viewer-content" style={{ flex: 1, overflow: "auto", background: "var(--bg)" }}>
-        {hasTextDiff ? <DiffView patch={result.patch} /> : result.patch ? (
+        {hasTextDiff ? <DiffView patch={result.patch} wrapLines={false} /> : result.patch ? (
           <pre style={{ padding: "12px 16px", margin: 0, whiteSpace: "pre-wrap", color: "var(--text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>{result.patch}</pre>
         ) : (
           <div style={{ padding: "12px 16px", color: "var(--text-dim)", fontSize: 12 }}>{t("i18n.noChanges")}</div>

@@ -63,7 +63,9 @@ export async function checkGitGraphDiff({ browser, base, artifacts, fixture }) {
     };
     const assertLines = async (removed, added) => {
       await panel.locator(".file-diff-line-content").filter({ hasText: removed }).first().waitFor();
-      const lines = await panel.locator(".file-diff-line-content").allTextContents();
+      const lineContents = panel.locator(".file-diff-line-content");
+      const lines = await lineContents.allTextContents();
+      assert.equal(await lineContents.first().evaluate((element) => getComputedStyle(element).whiteSpace), "pre", "historical diffs stay unwrapped");
       assert.ok(lines.includes(removed), `missing removed line ${removed}`);
       assert.ok(lines.includes(added), `missing added line ${added}`);
       assert.ok(!lines.includes("uncommitted working line"), "must not show the worktree diff");
