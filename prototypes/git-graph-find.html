@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Git Graph · 查找提交交互原型</title>
+<!--
+Assumptions: keep Pi Web's existing table and colors, change filtering into
+find-in-graph. One result is one commit; results cover loaded history only.
+The sample rows are drawn from the supplied reference screenshots. The 2/2
+counter is demo data, not a statement about the repository's actual history.
+-->
+<style>
+:root { color-scheme: light; --bg:#fff; --panel:#f5f5f5; --hover:#eee; --border:#e0e0e0; --text:#1a1a1a; --muted:#515c6b; --dim:#5e6673; --accent:#245bce; --mark:#f4c28f; --current:#fce4ce; font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--text); }
+button,input { font:inherit; color:inherit; }
+button { cursor:pointer; } button:disabled { cursor:default; }
+.frame { height:100vh; display:flex; flex-direction:column; }
+.titlebar { height:38px; display:flex; align-items:center; justify-content:space-between; padding:0 14px; border-bottom:1px solid var(--border); background:var(--panel); }
+.titlebar strong { font-size:12px; font-weight:600; } .caption { color:var(--dim); font-size:11px; }
+.toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:6px 10px; border-bottom:1px solid var(--border); }
+.branch { height:26px; border:1px solid var(--border); border-radius:4px; background:var(--panel); padding:0 8px; }
+.remote { display:flex; gap:5px; align-items:center; color:var(--muted); white-space:nowrap; font-size:11px; }
+.find { display:flex; flex:1 1 460px; flex-wrap:wrap; align-items:center; gap:6px; min-width:0; }
+.inputbox { display:flex; align-items:center; flex:1 1 220px; min-width:170px; max-width:360px; height:26px; border:1px solid var(--border); border-radius:4px; background:var(--panel); padding:0 3px 0 7px; }
+.inputbox:focus-within { border-color:var(--accent); } .inputbox.invalid { border-color:#b42318; }
+.glass { color:var(--dim); font-size:15px; line-height:1; margin-right:5px; }
+.inputbox input { min-width:0; width:100%; border:0; outline:0; background:transparent; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; }
+.tool { border:0; background:transparent; border-radius:3px; color:var(--muted); min-width:22px; height:22px; padding:0 3px; }
+.tool:hover, .tool[aria-pressed="true"] { background:var(--hover); color:var(--text); }
+.tool[aria-pressed="true"] { outline:1px solid var(--accent); }
+.tool:focus-visible, .branch:focus-visible { outline:2px solid var(--accent); }
+.tool:disabled { opacity:.35; cursor:default; } .nav { display:flex; align-items:center; gap:3px; white-space:nowrap; }
+.count { color:var(--muted); min-width:74px; font-size:11px; font-variant-numeric:tabular-nums; }
+.refresh { margin-left:auto; border:1px solid var(--border); }
+.hint { padding:5px 10px; color:var(--dim); background:var(--panel); border-bottom:1px solid var(--border); font-size:11px; }
+.hint.error { color:#b42318; }
+.scroll { flex:1; overflow:auto; }
+.table { min-width:720px; }
+.head,.row { display:grid; grid-template-columns:180px minmax(280px,1fr) 105px 145px 85px; align-items:center; }
+.head { height:26px; background:var(--panel); color:var(--dim); font-size:11px; }
+.head > div { padding:0 8px; border-right:1px solid var(--border); }
+.row { height:28px; border-top:1px solid var(--border); }
+.row.current { background:var(--current); }
+.row > div { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; padding:0 8px; }
+.row .graph { height:28px; padding:0; border-right:1px solid var(--border); }
+.row .meta { color:var(--muted); font-size:11px; } .row .sha { font:11px ui-monospace,monospace; color:var(--dim); }
+.badge { display:inline-block; max-width:55%; overflow:hidden; text-overflow:ellipsis; vertical-align:middle; padding:1px 5px; margin-right:5px; border:1px solid #3b82f6; border-radius:4px; background:#eff6ff; color:#2563eb; font-size:10px; }
+.badge.green { border-color:#22c55e; background:#f0fdf4; color:#16a34a; } mark { background:var(--mark); color:inherit; padding:0; }
+.details { padding:8px 12px; border-top:1px solid var(--border); background:var(--panel); color:var(--muted); } .details strong { color:var(--text); }
+@media(max-width:600px) { .remote { display:none; } .titlebar { height:34px; } .hint { line-height:1.5; } .table { min-width:0; } .head,.row { grid-template-columns:80px minmax(200px,1fr); } .head .meta,.row .meta,.row .sha,.head .sha { display:none; } .row > div { min-width:0; } }
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="titlebar"><strong>Git Graph</strong><span class="caption">交互原型 · 示例数据</span></div>
+  <div class="toolbar">
+    <button class="branch" type="button" disabled title="分支筛选仅作示意">⑂ &nbsp;全部分支 ▾</button>
+    <label class="remote" title="远端分支开关仅作示意"><input type="checkbox" checked disabled> 显示远端分支</label>
+    <div class="find" role="search" aria-label="查找提交">
+      <div class="inputbox" id="inputbox"><span class="glass" aria-hidden="true">⌕</span><input id="query" aria-label="查找提交" value="sections" autocomplete="off"><button class="tool" id="case" title="区分大小写" aria-label="区分大小写" aria-pressed="false">Aa</button><button class="tool" id="regex" title="正则表达式" aria-label="正则表达式" aria-pressed="false">.*</button><button class="tool" id="clear" title="清除搜索" aria-label="清除搜索">×</button></div>
+      <div class="nav"><span class="count" id="count" aria-live="polite"></span><button class="tool" id="prev" title="上一个匹配项（Shift+Enter）" aria-label="上一个匹配项">↑</button><button class="tool" id="next" title="下一个匹配项（Enter）" aria-label="下一个匹配项">↓</button><button class="tool" id="detailsToggle" title="跟随匹配项打开详情" aria-label="跟随匹配项打开详情" aria-pressed="false">▤</button></div>
+      <button class="tool refresh" title="刷新图谱仅作示意" aria-label="刷新图谱" disabled>↻</button>
+    </div>
+  </div>
+  <div class="hint" id="hint">仅在已加载的提交中查找；加载更早提交后，结果会随之更新。</div>
+  <div class="scroll" id="scroll"><div class="table"><div class="head"><div>Graph</div><div>Description</div><div class="meta">Author</div><div class="meta">Date</div><div class="sha">SHA</div></div><div id="rows"></div></div></div>
+  <div class="details" id="details" hidden></div>
+</div>
+<script>
+const samples = [
+  { graph:'<path d="M15 0v28" stroke="#a4a4a4"/><circle cx="15" cy="14" r="4" fill="white" stroke="#888"/>', subject:'Uncommitted Changes (41)', working:true, author:'*', date:'2026-11-03 15:50', sha:'*' },
+  { graph:'<path d="M15 0v28M31 14v14" stroke="#a4a4a4"/><circle cx="31" cy="14" r="4" fill="#3b82f6"/>', ref:'feat/pr-sections-standalone', subject:'feat(sidebar): organize projects into independent sections', author:'zhangdx', date:'2026-11-03 15:24', sha:'28b402f' },
+  { graph:'<path d="M15 0v28M31 0v28M47 14v14" stroke="#3b82f6"/><circle cx="47" cy="14" r="4" fill="#22c55e"/>', ref:'feat/pr-project-sections', green:true, subject:'feat(sidebar): organize projects into draggable sections', author:'zhangdx', date:'2026-11-03 14:48', sha:'a6ed2ff' },
+  { graph:'<path d="M15 0v28M31 0v28M47 0v28M63 14v14" stroke="#3b82f6"/><circle cx="63" cy="14" r="4" fill="#f59e0b"/>', ref:'feat/pr-priority', subject:'feat(sidebar): add session activity view', author:'zhangdx', date:'2026-11-03 14:42', sha:'78c1026' },
+  { graph:'<path d="M15 0v28M31 0v28M47 0v28M63 0v28" stroke="#3b82f6"/><circle cx="47" cy="14" r="4" fill="#22c55e"/>', ref:'feat/pr-unread-group', green:true, subject:'feat(sidebar): group unread sessions', author:'zhangdx', date:'2026-11-03 14:02', sha:'88ce5d3' },
+  { graph:'<path d="M15 0v28M31 0v28M47 0v28M63 0v14Q63 28 31 28" stroke="#3b82f6" fill="none"/><circle cx="15" cy="14" r="4" fill="white" stroke="#3b82f6" stroke-width="2"/>', ref:'fork/main', subject:'Merge upstream v0.14.2 into personal fork', author:'zhangdx', date:'2026-11-03 11:09', sha:'8017097' },
+  { graph:'<path d="M15 0v28M31 0v28M47 0v28" stroke="#3b82f6"/><circle cx="31" cy="14" r="4" fill="#ec4899"/>', ref:'feat/session-activity', subject:'Release v0.14.2', author:'Alex Yang', date:'2026-11-03 00:01', sha:'025e24e' },
+];
+const $ = (id) => document.getElementById(id);
+let position = 0, matches = [], pattern = null;
+function text(value) { const node = document.createElement('span'); node.textContent = value || ''; return node; }
+function highlighted(value) {
+  const result = document.createDocumentFragment(); if (!pattern) { result.append(text(value)); return result; }
+  const re = new RegExp(pattern.source, pattern.flags + 'g'); let last = 0, match;
+  while ((match = re.exec(value)) && match[0].length) { result.append(text(value.slice(last, match.index))); const mark = document.createElement('mark'); mark.textContent = match[0]; result.append(mark); last = re.lastIndex; }
+  result.append(text(value.slice(last))); return result;
+}
+function render(reset = false) {
+  const q = $('query').value; let error = '';
+  try {
+    pattern = q ? new RegExp($('regex').getAttribute('aria-pressed') === 'true' ? q : q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $('case').getAttribute('aria-pressed') === 'true' ? 'u' : 'iu') : null;
+    if (pattern) {
+      const probe = new RegExp(pattern.source, pattern.flags + 'g');
+      for (const value of ['', ...samples.flatMap(row => [row.ref || '', row.subject, row.author, row.date, row.sha])]) {
+        probe.lastIndex = 0; let match; while ((match = probe.exec(value))) if (!match[0].length) throw Error('不能使用匹配空字符串的正则表达式');
+      }
+    }
+  } catch (e) { pattern = null; error = e.message; }
+  matches = pattern ? samples.filter(row => !row.working && [row.ref || '',row.subject,row.author,row.date,row.sha].some(value => pattern.test(value))) : [];
+  if (reset) position = 0; if (position >= matches.length) position = 0;
+  $('count').textContent = q && !error ? (matches.length ? `${position + 1} / ${matches.length}+` : '0 / 0+') : '';
+  $('prev').disabled = $('next').disabled = matches.length === 0; $('inputbox').classList.toggle('invalid', !!error);
+  $('hint').classList.toggle('error', !!error); $('hint').textContent = error || '仅在已加载的提交中查找；加载更早提交后，结果会随之更新。';
+  $('rows').replaceChildren();
+  samples.forEach(row => {
+    const el = document.createElement('div'); el.className = 'row' + (matches[position] === row ? ' current' : '');
+    const graph = document.createElement('div'); graph.className = 'graph'; graph.innerHTML = `<svg width="100%" height="28" viewBox="0 0 180 28" preserveAspectRatio="xMinYMid meet">${row.graph}</svg>`; el.append(graph);
+    const desc = document.createElement('div'); if (row.ref) { const badge = document.createElement('span'); badge.className = 'badge' + (row.green ? ' green' : ''); badge.append(highlighted(row.ref)); desc.append(badge); } desc.append(highlighted(row.subject)); el.append(desc);
+    ['author','date','sha'].forEach(key => { const cell = document.createElement('div'); cell.className = key === 'sha' ? 'sha' : 'meta'; cell.append(highlighted(row[key])); el.append(cell); }); $('rows').append(el);
+  });
+  const selected = matches[position]; $('details').hidden = $('detailsToggle').getAttribute('aria-pressed') !== 'true' || !selected; if (!$('details').hidden) { $('details').replaceChildren(text('提交详情：'), text(selected.subject), text(' · ' + selected.sha)); }
+}
+$('query').addEventListener('input', () => render(true));
+$('query').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); position += e.shiftKey ? -1 : 1; if (position < 0) position = matches.length - 1; render(); } if (e.key === 'Escape') { $('query').value = ''; render(true); } });
+for (const id of ['case','regex','detailsToggle']) $(id).addEventListener('click', () => { $(id).setAttribute('aria-pressed', $(id).getAttribute('aria-pressed') !== 'true'); render(id !== 'detailsToggle'); });
+$('clear').addEventListener('click', () => { $('query').value = ''; render(true); $('query').focus(); });
+$('prev').addEventListener('click', () => { position = (position - 1 + matches.length) % matches.length; render(); }); $('next').addEventListener('click', () => { position = (position + 1) % matches.length; render(); });
+render();
+</script>
+</body>
+</html>

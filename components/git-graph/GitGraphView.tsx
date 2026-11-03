@@ -18,6 +18,7 @@ import {
   withWorkingTreeNode,
   WORKING_TREE_NODE_ID,
 } from "@/lib/git-graph-model";
+import { findGitGraphMatches, type GitGraphMatchRange, type GitGraphSearchMatch } from "@/lib/git-graph-search";
 import { GitGraphRowSvg } from "./GitGraphRowSvg";
 import { GitGraphDetails } from "./GitGraphDetails";
 import { GitGraphActions, type GitGraphActionTarget } from "./GitGraphActions";
@@ -40,6 +41,19 @@ interface GitGraphViewProps {
 const STORAGE_DETAILS_HEIGHT = "pi-web:git-graph-details-height";
 const STORAGE_SHOW_REMOTES = "pi-web:git-graph-show-remotes";
 const OVERSCAN = 20;
+
+function HighlightedText({ text, ranges }: { text: string; ranges?: readonly GitGraphMatchRange[] }) {
+  if (!ranges?.length) return text;
+  const parts: React.ReactNode[] = [];
+  let offset = 0;
+  for (const range of ranges) {
+    parts.push(text.slice(offset, range.start));
+    parts.push(<mark className={styles.findMatch} key={range.start}>{text.slice(range.start, range.end)}</mark>);
+    offset = range.end;
+  }
+  parts.push(text.slice(offset));
+  return parts;
+}
 
 export function GitGraphView({ cwd, onOpenFileDiff, onOpenWorkingFile, active = true, refreshKey = 0, onGitChanged, onOpenTerminal }: GitGraphViewProps) {
   const { t } = useI18n();
@@ -72,6 +86,11 @@ export function GitGraphView({ cwd, onOpenFileDiff, onOpenWorkingFile, active = 
   const [branchFilter, setBranchFilter] = useState<string>("all");
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchCaseSensitive, setSearchCaseSensitive] = useState(false);
+  const [searchRegex, setSearchRegex] = useState(false);
+  const [searchFollowDetails, setSearchFollowDetails] = useState(false);
+  const [searchMatchSha, setSearchMatchSha] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const generationRef = useRef(0);
   const inFlightRef = useRef(false);
   const commitsRef = useRef<GitGraphCommit[]>([]);
@@ -91,6 +110,8 @@ export function GitGraphView({ cwd, onOpenFileDiff, onOpenWorkingFile, active = 
   });
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const headerScrollRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [clientHeight, setClientHeight] = useState(600);
@@ -232,19 +253,36 @@ export function GitGraphView({ cwd, onOpenFileDiff, onOpenWorkingFile, active = 
   const minGraphWidth = Math.max(80, maxLanes * GRAPH_LANE_WIDTH + 16);
   const { columns, effectiveGraphWidth, headerRef, separatorProps, tableMinWidth } = useGitGraphColumns(minGraphWidth, isMobile, clientWidth);
 
-  // Filter rows based on search
-  const filteredRows = useMemo(() => {
-    const q = searchQuery.toLowerCase().trim();
-    if (!q) return allRows;
-    return allRows.filter((r) => {
-      const c = r.commit;
-      return (
-        c.subject.toLowerCase().includes(q) ||
-        c.shortSha.toLowerCase().includes(q) ||
-        c.author.toLowerCase().includes(q)
-      );
-    });
-  }, [allRows, searchQuery]);
+  // Find is over loaded commits, but the virtualizer always renders the full graph.
+  const searchResult = useMemo(() => findGitGraphMatches(allRows, searchQuery, searchCaseSensitive, searchRegex),
+    [allRows, searchQuery, searchCaseSensitive, searchRegex]);
+  const matchBySha = useMemo(() => new Map(searchResult.matches.map((match) => [match.sha, match])), [searchResult]);
+  const matchIndex = Math.max(0, searchResult.matches.findIndex((match) => match.sha === searchMatchSha));
+  const currentMatch = searchResult.matches[matchIndex];
+  const currentMatchSha = currentMatch?.sha;
+  const currentMatchRowIndex = currentMatch?.rowIndex;
+  const revealMatch = useCallback((rowIndex: number) => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const top = rowIndex * GRAPH_ROW_HEIGHT;
+    if (top < el.scrollTop || top + GRAPH_ROW_HEIGHT > el.scrollTop + el.clientHeight) {
+      el.scrollTo({ top: Math.max(0, top - Math.floor(el.clientHeight / 3)), behavior: "auto" });
+    }
+  }, []);
+  const moveMatch = (direction: -1 | 1) => {
+    const count = searchResult.matches.length;
+    if (!count) return;
+    const match = searchResult.matches[(matchIndex + direction + count) % count];
+    setSearchMatchSha(match.sha);
+    if (searchFollowDetails) setSelectedSha(match.sha);
+    revealMatch(match.rowIndex);
+  };
+  useEffect(() => {
+    if (activeRef.current && currentMatchRowIndex !== undefined) revealMatch(currentMatchRowIndex);
+  }, [currentMatchSha, currentMatchRowIndex, searchQuery, searchCaseSensitive, searchRegex, revealMatch]);
+  useEffect(() => {
+    if (searchFollowDetails && currentMatchSha) setSelectedSha(currentMatchSha);
+  }, [searchFollowDetails, currentMatchSha]);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
@@ -285,11 +323,11 @@ export function GitGraphView({ cwd, onOpenFileDiff, onOpenWorkingFile, active = 
   // Compute virtual slice
   const startIndex = Math.max(0, Math.floor(scrollTop / GRAPH_ROW_HEIGHT) - OVERSCAN);
   const visibleCount = Math.ceil(clientHeight / GRAPH_ROW_HEIGHT);
-  const endIndex = Math.min(filteredRows.length, startIndex + visibleCount + OVERSCAN * 2);
-  const visibleRows = filteredRows.slice(startIndex, endIndex);
+  const endIndex = Math.min(allRows.length, startIndex + visibleCount + OVERSCAN * 2);
+  const visibleRows = allRows.slice(startIndex, endIndex);
 
   const paddingTop = startIndex * GRAPH_ROW_HEIGHT;
-  const paddingBottom = Math.max(0, (filteredRows.length - endIndex) * GRAPH_ROW_HEIGHT);
+  const paddingBottom = Math.max(0, (allRows.length - endIndex) * GRAPH_ROW_HEIGHT);
 
   const selectedCommit = useMemo(() => {
     if (!selectedSha) return null;
@@ -305,7 +343,7 @@ export function GitGraphView({ cwd, onOpenFileDiff, onOpenWorkingFile, active = 
 
   const handleSelectSha = (sha: string) => {
     setSelectedSha((cur) => (cur === sha ? null : sha));
-    const targetIdx = filteredRows.findIndex((r) => r.commit.sha === sha);
+    const targetIdx = allRows.findIndex((r) => r.commit.sha === sha);
     if (targetIdx !== -1 && scrollContainerRef.current) {
       const targetTop = targetIdx * GRAPH_ROW_HEIGHT;
       const curTop = scrollContainerRef.current.scrollTop;
@@ -319,14 +357,14 @@ export function GitGraphView({ cwd, onOpenFileDiff, onOpenWorkingFile, active = 
     }
   };
 
-  const renderRefBadges = (refs: GitGraphRef[], curveColor: string, commit: GitGraphCommit) => refs.map((ref) => {
+  const renderRefBadges = (refs: GitGraphRef[], curveColor: string, commit: GitGraphCommit, match?: GitGraphSearchMatch) => refs.map((ref, index) => {
     const badgeStyle = getRefBadgeStyle(ref, curveColor);
     const style: React.CSSProperties = {
       display: "inline-flex", alignItems: "center", gap: 3, padding: "1px 6px", borderRadius: 4,
       fontSize: 10.5, lineHeight: "14px", fontWeight: badgeStyle.fontWeight ?? 500, flexShrink: 0,
       background: badgeStyle.bg, color: badgeStyle.color, border: badgeStyle.border,
     };
-    if (ref.type === "head") return <span key="head" style={style}><span style={{ width: 5, height: 5, borderRadius: "50%", background: "#34d399" }} />{ref.name}</span>;
+    if (ref.type === "head") return <span key="head" style={style}><span style={{ width: 5, height: 5, borderRadius: "50%", background: "#34d399" }} /><HighlightedText text={ref.name} ranges={match?.refs[index]} /></span>;
     return <button key={`${ref.type}:${ref.name}`} type="button" className={styles.refButton} style={style}
       aria-label={t("gitGraph.action.menu", { target: ref.name })}
       onClick={(event) => {
@@ -336,7 +374,7 @@ export function GitGraphView({ cwd, onOpenFileDiff, onOpenWorkingFile, active = 
       onContextMenu={(event) => {
         event.preventDefault(); event.stopPropagation();
         setActionTarget({ commit, ref, anchor: { kind: "point", x: event.clientX, y: event.clientY }, opener: event.currentTarget });
-      }}>{ref.name}</button>;
+      }}><HighlightedText text={ref.name} ranges={match?.refs[index]} /></button>;
   });
 
   if (loading && commits.length === 0) {
@@ -572,8 +610,8 @@ export function GitGraphView({ cwd, onOpenFileDiff, onOpenWorkingFile, active = 
         )}
 
         {/* Keep search and refresh together when the toolbar wraps. */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "1 1 330px", minWidth: 0 }}>
-          <div style={{ position: "relative", flex: "1 1 0", minWidth: 0, maxWidth: 360 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, flex: "1 1 330px", minWidth: 0 }}>
+          <div style={{ position: "relative", flex: "1 1 200px", minWidth: searchQuery ? "min(100%, 240px)" : 0, maxWidth: 360 }}>
             <svg
               width="12"
               height="12"
@@ -595,49 +633,52 @@ export function GitGraphView({ cwd, onOpenFileDiff, onOpenWorkingFile, active = 
             </svg>
             <input
               type="text"
+              className={styles.findInput}
+              ref={searchInputRef}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing) return;
+                if (event.key === "Enter" && searchQuery) { event.preventDefault(); event.stopPropagation(); moveMatch(event.shiftKey ? -1 : 1); }
+                if (event.key === "Escape" && searchQuery) { event.preventDefault(); event.stopPropagation(); setSearchQuery(""); }
+              }}
               placeholder={t("gitGraph.search")}
               aria-label={t("gitGraph.search")}
+              aria-invalid={!!searchResult.error}
               style={{
                 width: "100%",
                 height: 24,
-                padding: "0 22px 0 24px",
+                padding: searchQuery ? "0 70px 0 24px" : "0 22px 0 24px",
                 fontSize: 11,
                 fontFamily: "var(--font-mono)",
                 background: "var(--bg-panel)",
-                border: "1px solid var(--border)",
+                border: `1px solid ${searchResult.error ? "#ef4444" : "var(--border)"}`,
                 borderRadius: 4,
                 color: "var(--text)",
-                outline: "none",
               }}
             />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery("")}
-                title={t("gitGraph.clearSearch")}
-                aria-label={t("gitGraph.clearSearch")}
-                style={{
-                  position: "absolute",
-                  right: 4,
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  width: 16,
-                  height: 16,
-                  background: "none",
-                  border: "none",
-                  color: "var(--text-dim)",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                ✕
-              </button>
-            )}
+            {searchQuery && <div className={styles.findOptions}>
+              <button type="button" className={styles.findButton} aria-pressed={searchCaseSensitive}
+                title={t("gitGraph.findCase")} aria-label={t("gitGraph.findCase")}
+                onClick={() => setSearchCaseSensitive((value) => !value)}>Aa</button>
+              <button type="button" className={styles.findButton} aria-pressed={searchRegex}
+                title={t("gitGraph.findRegex")} aria-label={t("gitGraph.findRegex")}
+                onClick={() => setSearchRegex((value) => !value)}>.*</button>
+              <button type="button" className={styles.findButton} title={t("gitGraph.clearSearch")} aria-label={t("gitGraph.clearSearch")}
+                onClick={() => { setSearchQuery(""); searchInputRef.current?.focus(); }}>×</button>
+            </div>}
           </div>
+          {searchQuery && <div className={styles.findNavigation}>
+            <span className={styles.findCount} data-testid="git-graph-find-count" role="status" aria-live="polite" title={hasMore ? t("gitGraph.findLoadedOnly") : undefined}>
+              {searchResult.error ? "" : t("gitGraph.findCount", { current: currentMatch ? matchIndex + 1 : 0, total: searchResult.matches.length })}{!searchResult.error && hasMore ? "+" : ""}
+            </span>
+            <button type="button" className={styles.findButton} disabled={!currentMatch} title={t("gitGraph.findPrevious")} aria-label={t("gitGraph.findPrevious")}
+              onClick={() => moveMatch(-1)}>↑</button>
+            <button type="button" className={styles.findButton} disabled={!currentMatch} title={t("gitGraph.findNext")} aria-label={t("gitGraph.findNext")}
+              onClick={() => moveMatch(1)}>↓</button>
+            <button type="button" className={styles.findButton} aria-pressed={searchFollowDetails} title={t("gitGraph.findFollowDetails")} aria-label={t("gitGraph.findFollowDetails")}
+              onClick={() => setSearchFollowDetails((value) => !value)}>▤</button>
+          </div>}
           <button
             type="button"
             onClick={refreshGraph}
@@ -671,6 +712,9 @@ export function GitGraphView({ cwd, onOpenFileDiff, onOpenWorkingFile, active = 
           </button>
         </div>
       </div>
+      {searchQuery && (searchResult.error || hasMore) && <div className={styles.findNotice} role={searchResult.error ? "alert" : undefined}>
+        {searchResult.error === "invalid-pattern" ? t("gitGraph.findInvalidRegex") : searchResult.error === "empty-match" ? t("gitGraph.findEmptyRegex") : t("gitGraph.findLoadedOnly")}
+      </div>}
 
       {/* The header follows the body's horizontal scroll, not its vertical scroll. */}
       <div style={{ background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
@@ -726,6 +770,9 @@ export function GitGraphView({ cwd, onOpenFileDiff, onOpenWorkingFile, active = 
         {visibleRows.map((row) => {
           const c = row.commit;
           const isSelected = c.sha === selectedSha;
+          const match = matchBySha.get(c.sha);
+          const isCurrentMatch = c.sha === currentMatch?.sha;
+          const rowBackground = isCurrentMatch ? "color-mix(in srgb, #f59e0b 18%, var(--bg))" : isSelected ? "var(--bg-selected)" : "var(--bg)";
           const isWorkingTree = c.sha === WORKING_TREE_NODE_ID;
           const curveColor = GRAPH_PALETTE[row.colorIndex] ?? "var(--accent)";
 
@@ -761,13 +808,14 @@ export function GitGraphView({ cwd, onOpenFileDiff, onOpenWorkingFile, active = 
                 borderBottom: "1px solid var(--border)",
                 cursor: "pointer",
                 fontSize: 12,
-                background: isSelected ? "var(--bg-selected)" : "var(--bg)",
+                background: rowBackground,
               }}
+              data-search-current={isCurrentMatch || undefined}
               onMouseEnter={(e) => {
-                if (!isSelected) e.currentTarget.style.background = "var(--bg-hover)";
+                if (!isSelected && !isCurrentMatch) e.currentTarget.style.background = "var(--bg-hover)";
               }}
               onMouseLeave={(e) => {
-                if (!isSelected) e.currentTarget.style.background = "var(--bg)";
+                e.currentTarget.style.background = rowBackground;
               }}
             >
               {/* Graph Cell */}
@@ -804,7 +852,7 @@ export function GitGraphView({ cwd, onOpenFileDiff, onOpenWorkingFile, active = 
                   borderRight: !isMobile ? "1px solid var(--border)" : undefined,
                 }}
               >
-                {c.refs.length > 0 && <div className={styles.refList}>{renderRefBadges(c.refs, curveColor, c)}</div>}
+                {c.refs.length > 0 && <div className={styles.refList}>{renderRefBadges(c.refs, curveColor, c, match)}</div>}
                 <span
                   title={c.subject}
                   style={{
@@ -816,7 +864,7 @@ export function GitGraphView({ cwd, onOpenFileDiff, onOpenWorkingFile, active = 
                     flex: 1,
                   }}
                 >
-                  {c.subject}
+                  <HighlightedText text={c.subject} ranges={match?.subject} />
                 </span>
                 {!isWorkingTree && <button type="button" className={styles.rowActions} aria-label={t("gitGraph.action.commitMenu", { sha: c.shortSha })}
                   onClick={(event) => { event.stopPropagation(); setActionTarget({ commit: c, anchor: { kind: "rect", rect: event.currentTarget.getBoundingClientRect(), align: "end" }, opener: event.currentTarget }); }}>⋯</button>}
@@ -837,7 +885,7 @@ export function GitGraphView({ cwd, onOpenFileDiff, onOpenWorkingFile, active = 
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {c.author}
+                  <HighlightedText text={c.author} ranges={match?.author} />
                 </div>
               )}
 
@@ -857,7 +905,7 @@ export function GitGraphView({ cwd, onOpenFileDiff, onOpenWorkingFile, active = 
                     fontVariantNumeric: "tabular-nums",
                   }}
                 >
-                  {formatCommitDate(c.committedAt)}
+                  <HighlightedText text={formatCommitDate(c.committedAt)} ranges={match?.date} />
                 </div>
               )}
 
@@ -876,7 +924,7 @@ export function GitGraphView({ cwd, onOpenFileDiff, onOpenWorkingFile, active = 
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {c.shortSha}
+                  <HighlightedText text={c.shortSha} ranges={match?.shortSha} />
                 </div>
               )}
             </div>

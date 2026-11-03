@@ -105,6 +105,8 @@ export async function checkGitGraphI18n({ browser, base, artifacts, fixture }) {
         remote: "Show remote branches", refresh: "Refresh graph", close: "Close details",
         parent: `Go to parent commit ${rootSha}`, files: "Changed files: 1", diff: "View Diff ↗",
         load: "Load older commits (+500)", clear: "Clear commit search", copied: "Copied ✓", settings: "Settings", general: "General",
+        findCase: "Match case", findRegex: "Use regular expression", findNext: "Next match (Enter)",
+        findScope: "Searching loaded commits only. Load older commits to find more.",
       },
       {
         radio: "简体中文", locale: "zh-CN", title: "Git Graph 图谱", search: "搜索提交（信息、SHA、作者）…",
@@ -112,6 +114,9 @@ export async function checkGitGraphI18n({ browser, base, artifacts, fixture }) {
         remote: "显示远端分支", refresh: "刷新图谱", close: "关闭详情",
         parent: `跳转至父提交 ${rootSha}`, files: "变更文件：1", diff: "查看 Diff ↗",
         load: "加载更早提交 (+500)", clear: "清除提交搜索", copied: "已复制 ✓", settings: "设置", general: "常规",
+        findCase: "区分大小写", findRegex: "使用正则表达式", findNext: "下一个匹配项（Enter）",
+        findScope: "仅搜索已加载的提交；加载更早提交后可查找更多结果。",
+
       },
       {
         radio: "繁體中文", locale: "zh-TW", title: "Git Graph 圖譜", search: "搜尋提交（訊息、SHA、作者）…",
@@ -119,6 +124,9 @@ export async function checkGitGraphI18n({ browser, base, artifacts, fixture }) {
         remote: "顯示遠端分支", refresh: "重新整理圖譜", close: "關閉詳情",
         parent: `前往父提交 ${rootSha}`, files: "變更檔案：1", diff: "檢視 Diff ↗",
         load: "載入更早的提交 (+500)", clear: "清除提交搜尋", copied: "已複製 ✓", settings: "設定", general: "一般",
+        findCase: "區分大小寫", findRegex: "使用正規表示式", findNext: "下一個符合項目（Enter）",
+        findScope: "只搜尋已載入的提交；載入更早的提交後可查找更多結果。",
+
       },
     ];
     for (const [index, variant] of variants.entries()) {
@@ -136,6 +144,10 @@ export async function checkGitGraphI18n({ browser, base, artifacts, fixture }) {
       assert.equal(await page.getByRole("tab", { name: variant.title, exact: true }).count(), 1);
       assert.equal(await panel.getByLabel(variant.search).inputValue(), "Fixture");
       await panel.getByRole("button", { name: variant.clear, exact: true }).waitFor();
+      await panel.getByRole("button", { name: variant.findCase, exact: true }).waitFor();
+      await panel.getByRole("button", { name: variant.findRegex, exact: true }).waitFor();
+      await panel.getByRole("button", { name: variant.findNext, exact: true }).waitFor();
+      await panel.getByText(variant.findScope, { exact: true }).waitFor();
       await panel.getByRole("button", { name: variant.refresh, exact: true }).waitFor();
       await panel.getByRole("button", { name: variant.close, exact: true }).waitFor();
       await panel.getByText(variant.remote, { exact: true }).waitFor();

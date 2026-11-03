@@ -20,6 +20,7 @@ import { checkFilesPlacement, showSidebarSessions } from "./sidebar.mjs";
 import { checkSessionNavigation } from "./session-navigation.mjs";
 import { checkProjectNavigation, createProjectNavigationFixtures } from "./project-navigation.mjs";
 import { checkGitGraphI18n } from "./git-graph-i18n.mjs";
+import { checkGitGraphSearch } from "./git-graph-search.mjs";
 import { checkGitGraphColumns } from "./git-graph-columns.mjs";
 import { checkGitGraphDiff, createGitGraphDiffFixture } from "./git-graph-diff.mjs";
 import { checkGitGraphActions, createGitGraphActionFixtures } from "./git-graph-actions.mjs";
@@ -545,6 +546,7 @@ try {
     },
   });
   await checkGitGraphI18n({ browser, base, artifacts, fixture: projectNavigation });
+  await checkGitGraphSearch({ browser, base, artifacts, fixture: projectNavigation });
   await checkGitGraphColumns({ browser, base, artifacts, fixture: projectNavigation });
   await checkGitGraphDiff({ browser, base, artifacts, fixture: gitGraphDiff });
   await checkGitGraphActions({ browser, base, artifacts, fixtures: gitGraphActions });
