@@ -68,6 +68,8 @@ try {
   const page = await desktop.newPage();
   page.on("pageerror", (error) => errors.push(error.message));
   page.setDefaultTimeout(15_000);
+  // A fresh Turbopack graph can take longer than the interaction timeout to compile.
+  page.setDefaultNavigationTimeout(60_000);
   await page.goto(`${base}/?cwd=${encodeURIComponent(alpha.cwd)}`, { waitUntil: "domcontentloaded" });
   await page.locator(".new-session-hero").waitFor({ state: "visible" });
   await page.getByRole("button", { name: "New Section…" }).click();
@@ -124,8 +126,24 @@ try {
   await sectionMenu(page, personal);
   await page.getByRole("menuitem", { name: "Move up", exact: true }).click();
   await waitState((value) => value.sections?.[0]?.id === personal);
-  await group(page, beta.projectKey).dragTo(section(page, work), { targetPosition: { x: 40, y: 12 } });
-  await waitState((value) => value.projectSections?.[beta.projectKey] === work);
+
+  // A section moves with its projects; a drag does not toggle its header.
+  const workExpanded = await section(page, work).locator(".session-tree-pinned-toggle").getAttribute("aria-expanded");
+  await section(page, work).dragTo(section(page, personal), { targetPosition: { x: 40, y: 3 } });
+  await waitState((value) => value.sections?.[0]?.id === work);
+  assert.equal(await section(page, work).locator(".session-tree-pinned-toggle").getAttribute("aria-expanded"), workExpanded);
+  await section(page, work).dragTo(group(page, beta.projectKey), { targetPosition: { x: 40, y: 25 } });
+  await waitState((value) => value.sections?.[0]?.id === personal);
+
+  // A project can enter another section at a position in its body.
+  await group(page, beta.projectKey).dragTo(group(page, alpha.projectKey), { targetPosition: { x: 40, y: 4 } });
+  state = await waitState((value) => value.projectSections?.[beta.projectKey] === work);
+  assert.ok(state.projectOrder.indexOf(beta.projectKey) < state.projectOrder.indexOf(alpha.projectKey));
+  await page.waitForFunction(({ first, second }) => {
+    const a = document.querySelector(`[data-row-key=${JSON.stringify(`group:${first}`)}]`);
+    const b = document.querySelector(`[data-row-key=${JSON.stringify(`group:${second}`)}]`);
+    return a && b && a.getBoundingClientRect().top < b.getBoundingClientRect().top;
+  }, { first: beta.projectKey, second: alpha.projectKey });
   await groupMenu(page, beta.projectKey);
   await page.getByRole("menuitem", { name: "Pin project", exact: true }).click();
   await waitState((value) => Boolean(value.projects?.[beta.projectKey]));
@@ -133,7 +151,10 @@ try {
   await page.screenshot({ path: path.join(artifacts, "project-sections-desktop.png") });
   await page.reload({ waitUntil: "domcontentloaded" });
   await section(page, work).waitFor();
-  assert.equal((await getState()).projectSections[alpha.projectKey], work);
+  state = await getState();
+  assert.equal(state.projectSections[alpha.projectKey], work);
+  assert.equal(state.projectSections[beta.projectKey], work);
+  assert.equal(state.sections[0].id, personal);
   console.log("PASS desktop: create, move, rename, create-and-move, reorder, drag, reload");
 
   const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: "en-US", hasTouch: true, isMobile: true });
@@ -160,16 +181,23 @@ try {
   await phone.screenshot({ path: path.join(artifacts, "project-sections-form-mobile.png") });
   await phone.getByRole("button", { name: "Cancel", exact: true }).click();
 
-  // Exercise the actual browser pointer/touch path, not only the hook's simulated events.
-  const sourceBox = await group(phone, alpha.projectKey).boundingBox();
-  const targetBox = await section(phone, "__ungrouped__").boundingBox();
-  assert.ok(sourceBox && targetBox, "touch drag source and destination are visible");
-  const touch = await mobile.newCDPSession(phone);
-  await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: sourceBox.x + 50, y: sourceBox.y + sourceBox.height / 2, id: 1 }] });
-  await phone.waitForTimeout(400);
-  await touch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: targetBox.x + 50, y: targetBox.y + targetBox.height / 2, id: 1 }] });
-  await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-  await touch.detach();
+  // Exercise the actual browser pointer/touch path, not only simulated events.
+  const touchDrag = async (source, destination, targetY) => {
+    const sourceBox = await source.boundingBox();
+    const targetBox = await destination.boundingBox();
+    assert.ok(sourceBox && targetBox, "touch drag source and destination are visible");
+    const touch = await mobile.newCDPSession(phone);
+    await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: sourceBox.x + 50, y: sourceBox.y + sourceBox.height / 2, id: 1 }] });
+    await phone.waitForTimeout(400);
+    await touch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: targetBox.x + 50, y: targetBox.y + (targetY ?? targetBox.height / 2), id: 1 }] });
+    await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await touch.detach();
+  };
+  await touchDrag(section(phone, work), section(phone, personal), 3);
+  await waitState((value) => value.sections?.[0]?.id === work);
+  await touchDrag(group(phone, alpha.projectKey), phone.locator(`[data-row-key=${JSON.stringify(`section-empty:${personal}`)}]`));
+  await waitState((value) => value.projectSections?.[alpha.projectKey] === personal);
+  await touchDrag(group(phone, alpha.projectKey), section(phone, "__ungrouped__"));
   await waitState((value) => !value.projectSections?.[alpha.projectKey]);
 
   // The mobile menu offers the same move in both directions without dragging.

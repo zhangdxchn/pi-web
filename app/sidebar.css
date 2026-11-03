@@ -636,6 +636,12 @@ a.session-tree-main {
   text-overflow: ellipsis;
 }
 
+.session-tree-section {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
 .session-tree-section:hover .session-tree-group-actions,
 .session-tree-section.is-active .session-tree-group-actions,
 .session-tree-section:focus-within .session-tree-group-actions,
@@ -649,7 +655,8 @@ a.session-tree-main {
 }
 
 /* Picked up by a long-press, before the finger moves. */
-.session-tree-group.is-drag-armed {
+.session-tree-group.is-drag-armed,
+.session-tree-section.is-drag-armed {
   background: var(--bg-selected);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
 }

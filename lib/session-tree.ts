@@ -825,10 +825,47 @@ export function groupBlocks(rows: readonly SidebarRow[], offsets: readonly numbe
   return blocks;
 }
 
-/** Header drop: undefined outside a section, null when it cannot accept this project. */
+export interface SectionBlock { sectionId: string | null; top: number; bottom: number }
+
+/** Each section's header and visible body, excluding the footer. */
+export function sectionBlocks(rows: readonly SidebarRow[], offsets: readonly number[]): SectionBlock[] {
+  const blocks: SectionBlock[] = [];
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index];
+    if (row.kind !== "section") continue;
+    let end = index + 1;
+    while (end < rows.length && rows[end].kind !== "section" && rows[end].key !== "footer-spacer" && !rows[end].kind.startsWith("footer-")) end++;
+    blocks.push({ sectionId: row.sectionId, top: offsets[index], bottom: offsets[end] });
+  }
+  return blocks;
+}
+
+/** Reorder custom sections as whole blocks. Ungrouped remains last. */
+export function sectionReorderAt(blocks: readonly SectionBlock[], sectionId: string, y: number): { anchorId: string; position: ProjectMovePosition; lineY: number } | null {
+  const custom = blocks.filter((block): block is SectionBlock & { sectionId: string } => block.sectionId !== null);
+  const source = custom.find((block) => block.sectionId === sectionId);
+  if (!source) return null;
+  const from = custom.indexOf(source);
+  const others = custom.filter((block) => block !== source);
+  if (others.length === 0) return null;
+  const to = others.filter((block) => (block.top + block.bottom) / 2 < y).length;
+  if (to === from) return null;
+  return to > 0
+    ? { anchorId: others[to - 1].sectionId, position: "after", lineY: others[to - 1].bottom }
+    : { anchorId: others[0].sectionId, position: "before", lineY: others[0].top };
+}
+
+export interface SectionProjectDrop {
+  sectionId: string | null;
+  lineY: number;
+  anchorKey?: string;
+  position?: ProjectMovePosition;
+}
+
+/** Cross-section drop: undefined in the source section, null when refused. */
 export function sectionDropAt(
   rows: readonly SidebarRow[], offsets: readonly number[], blocks: readonly GroupBlock[], projectKey: string, y: number,
-): { sectionId: string | null; lineY: number } | null | undefined {
+): SectionProjectDrop | null | undefined {
   const index = rows.findIndex((_row, position) => y >= offsets[position] && y < offsets[position + 1]);
   if (index < 0) return undefined;
   const row = rows[index];
@@ -837,12 +874,17 @@ export function sectionDropAt(
     if (!source || source.pinned || source.sectionId === row.sectionId) return null;
     return { sectionId: row.sectionId, lineY: offsets[index + 1] };
   }
-  // A different section's body is not a reorder target in the source section.
-  if (source && !source.pinned && source.sectionId !== undefined) {
-    for (let position = index; position >= 0; position--) {
-      const ancestor = rows[position];
-      if (ancestor.kind === "section") return ancestor.sectionId === source.sectionId ? undefined : null;
-    }
+  if (!source || source.pinned || source.sectionId === undefined || row.key === "footer-spacer" || row.kind.startsWith("footer-")) return undefined;
+  for (let position = index; position >= 0; position--) {
+    const ancestor = rows[position];
+    if (ancestor.kind !== "section") continue;
+    if (ancestor.sectionId === source.sectionId) return undefined;
+    const targets = blocks.filter((block) => !block.pinned && block.sectionId === ancestor.sectionId);
+    if (targets.length === 0) return { sectionId: ancestor.sectionId, lineY: offsets[position + 1] };
+    const to = targets.filter((block) => (block.top + block.bottom) / 2 < y).length;
+    const anchor = to > 0 ? targets[to - 1] : targets[0];
+    const lineY = to < targets.length ? targets[to].top - targets[to].gapAbove / 2 : anchor.bottom + anchor.gapBelow / 2;
+    return { sectionId: ancestor.sectionId, anchorKey: anchor.key, position: to > 0 ? "after" : "before", lineY };
   }
   return undefined;
 }

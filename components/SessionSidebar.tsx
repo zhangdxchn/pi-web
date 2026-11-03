@@ -1733,12 +1733,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       return next;
     });
   }, []);
-  const assignProject = useCallback((projectKey: string, sectionId: string | null) => {
+  const assignProject = useCallback((projectKey: string, sectionId: string | null, placement?: { anchorKey: string; position: ProjectMovePosition }) => {
     const project = projectByKey.get(projectKey);
     if (!project || (project.sectionId ?? null) === sectionId) return;
     openSection(sectionId);
     const add = model.unorderedKeysByBand.other.slice(-MAX_SESSION_UI_IDS_PER_REQUEST);
-    void applyUiState({ action: "assign-project-section", projectKey, sectionId, add });
+    void applyUiState({ action: "assign-project-section", projectKey, sectionId, add, ...placement });
     treeRevealIdRef.current += 1;
     setTreeReveal({ id: treeRevealIdRef.current, at: Date.now(), rowKey: `group:${projectKey}` });
   }, [applyUiState, model.unorderedKeysByBand.other, openSection, projectByKey]);
@@ -2938,6 +2938,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     // The archive view has no group rows: only the main tree's can be dragged.
     onMoveGroup: moveProject,
     onAssignSection: assignProject,
+    onMoveSection: (sectionId: string, anchorId: string, position: ProjectMovePosition) => { void applyUiState({ action: "move-section", id: sectionId, anchorId, position }); },
   } as const;
 
   const explorerCwd = selectedCwd ?? selectedCwdProp ?? null;

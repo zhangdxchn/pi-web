@@ -87,7 +87,7 @@ export type SessionUiStateRequest =
   | { action: "rename-section"; id: string; name: string }
   | { action: "delete-section"; id: string }
   | { action: "move-section"; id: string; anchorId: string; position: ProjectMovePosition }
-  | { action: "assign-project-section"; projectKey: string; sectionId: string | null; add: string[] };
+  | { action: "assign-project-section"; projectKey: string; sectionId: string | null; add: string[]; anchorKey?: string; position?: ProjectMovePosition };
 
 export interface SessionUiStateResponse { state: SessionUiState }
 
@@ -447,6 +447,11 @@ export function parseSessionUiStateRequest(body: unknown): ParseResult {
       if (body.sectionId !== null && !isSectionId(body.sectionId)) return { ok: false, error: "sectionId must be a section id or null" };
       const add = body.add === undefined ? { ok: true as const, keys: [] } : parseProjectKeys(body.add, "add", true);
       if (!add.ok) return add;
+      if (body.anchorKey !== undefined || body.position !== undefined) {
+        if (!isProjectString(body.anchorKey) || body.anchorKey === body.projectKey) return { ok: false, error: "anchorKey must be a different project key" };
+        if (body.position !== "before" && body.position !== "after") return { ok: false, error: "position must be before or after" };
+        return { ok: true, request: { action: body.action, projectKey: body.projectKey, sectionId: body.sectionId, add: add.keys, anchorKey: body.anchorKey, position: body.position } };
+      }
       return { ok: true, request: { action: body.action, projectKey: body.projectKey, sectionId: body.sectionId, add: add.keys } };
     }
     default:
@@ -631,12 +636,13 @@ function capProjectOrder(order: string[], keep: ReadonlySet<string>): string[] {
   return orderFits(count, bytes) ? kept : fitProjectOrder(kept);
 }
 
-/** Change membership and move an unpinned project to the top without evicting saved keys. */
+/** Change membership and place an unpinned project without evicting saved keys. */
 function assignProjectSection(
   state: SessionUiState,
   projectKey: string,
   sectionId: string | null,
   add: readonly string[],
+  placement?: { anchorKey: string; position: ProjectMovePosition },
 ): { changed: boolean; reason?: SessionUiSectionRefusal } {
   if (sectionId !== null && !state.sections?.some((section) => section.id === sectionId)) return { changed: false, reason: "missing-section" };
   const previous = state.projectSections && hasOwn(state.projectSections, projectKey) ? state.projectSections[projectKey] : null;
@@ -647,7 +653,10 @@ function assignProjectSection(
   if (Object.keys(memberships).length > MAX_PROJECT_SECTIONS || namesBytes(memberships) > PROJECT_SECTIONS_MAX_BYTES) return { changed: false, reason: "full" };
   if (!hasOwn(state.projects, projectKey)) {
     const order = state.projectOrder ?? [];
-    const moved = [projectKey, ...missingProjectKeys(order, add).filter((key) => key !== projectKey), ...order.filter((key) => key !== projectKey)];
+    const added = [...missingProjectKeys(order, add), ...order];
+    const moved = placement
+      ? withProjectMoved(added, projectKey, placement.anchorKey, placement.position)
+      : [projectKey, ...added.filter((key) => key !== projectKey)];
     if (!orderFits(moved.length, orderBytes(moved))) return { changed: false, reason: "full" };
     writeProjectOrder(state, moved);
   }
@@ -784,7 +793,8 @@ export function applySessionUiStateRequest(
       break;
     }
     case "assign-project-section": {
-      const assigned = assignProjectSection(next, request.projectKey, request.sectionId, request.add);
+      const placement = request.anchorKey && request.position ? { anchorKey: request.anchorKey, position: request.position } : undefined;
+      const assigned = assignProjectSection(next, request.projectKey, request.sectionId, request.add, placement);
       if (assigned.reason) return { state, changed: false, reason: assigned.reason };
       changed = assigned.changed;
       break;

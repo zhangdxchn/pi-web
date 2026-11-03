@@ -16,23 +16,27 @@ import {
   ghostTopFor,
   groupBlocks,
   groupDropAt,
+  sectionBlocks,
   sectionDropAt,
+  sectionReorderAt,
   type GroupBlock,
   type GroupDrop,
+  type SectionBlock,
+  type SectionProjectDrop,
   type SidebarLayout,
   type SidebarRow,
 } from "@/lib/session-tree";
 import type { ProjectMovePosition } from "@/lib/session-ui-state-shared";
 
 /**
- * Dragging a project group's header to reorder the session tree's groups
+ * Dragging a project or section header in the session tree
  * (components/SessionTree.tsx). Pointer events, not HTML5 drag and drop:
  * that never starts from a touch on iOS and gives no say over scrolling a
  * virtualized list. A mouse picks the group up once it has moved
  * DRAG_START_PX; touch and pen hold it LONG_PRESS_MS first, so a swipe still
  * scrolls the list and a tap still toggles the group. The drop target comes
- * from the model's rows and offsets (groupDropAt), never from the DOM, so
- * rows the virtualizer has not mounted count as well.
+ * from the model's rows and offsets, never from the DOM, so rows the
+ * virtualizer has not mounted count as well.
  */
 
 /** A mouse drag starts once the pointer has moved this far. */
@@ -55,12 +59,13 @@ const GHOST_INDENT_PX = 4;
 const CLICK_SUPPRESS_MS = 600;
 
 type DragPhase = "pending" | "armed" | "dragging" | "cancelled";
-type DropTarget = GroupDrop | { sectionId: string | null; lineY: number };
+export interface DragItem { kind: "project" | "section"; key: string }
+type DropTarget = GroupDrop | SectionProjectDrop | { anchorId: string; position: ProjectMovePosition; lineY: number };
 
 interface DragState {
   pointerId: number;
   pointerType: string;
-  projectKey: string;
+  item: DragItem;
   /** The header row: it holds a mouse or pen's pointer capture and gives the ghost its left edge. */
   element: HTMLElement;
   startX: number;
@@ -80,17 +85,17 @@ interface DragState {
 }
 
 export interface GroupDragView {
-  projectKey: string;
-  /** "armed": a long-press picked the group up; "dragging": it follows the pointer. */
+  item: DragItem;
+  /** "armed": a long-press picked the header up; "dragging": it follows the pointer. */
   phase: "armed" | "dragging";
   drop: DropTarget | null;
-  /** The dragged group's block while dragging, else null. */
-  source: GroupBlock | null;
+  /** The dragged project's or section's block while dragging, else null. */
+  source: GroupBlock | SectionBlock | null;
 }
 
 /** Stable: a header calls these from its own listeners. */
 export interface GroupDragHandlers {
-  onPointerDown(event: ReactPointerEvent<HTMLElement>, projectKey: string): void;
+  onPointerDown(event: ReactPointerEvent<HTMLElement>, item: DragItem): void;
   /** From the header's non-passive touchmove listener: holds the list still while a group is picked up. */
   onTouchMove(event: TouchEvent): void;
 }
@@ -99,7 +104,7 @@ export interface GroupDragOptions {
   rows: SidebarRow[];
   offsets: number[];
   layout: SidebarLayout;
-  /** False while loading or without onMove: a drag under way is cancelled. */
+  /** False while loading or without a move handler: a drag under way is cancelled. */
   enabled: boolean;
   scrollRef: RefObject<HTMLDivElement | null>;
   /** `.session-tree-inner`: content coordinates are relative to its top. */
@@ -108,7 +113,8 @@ export interface GroupDragOptions {
   treeRef: RefObject<HTMLDivElement | null>;
   ghostRef: RefObject<HTMLDivElement | null>;
   onMove(projectKey: string, anchorKey: string, position: ProjectMovePosition): void;
-  onAssignSection?(projectKey: string, sectionId: string | null): void;
+  onAssignSection?(projectKey: string, sectionId: string | null, placement?: { anchorKey: string; position: ProjectMovePosition }): void;
+  onMoveSection?(sectionId: string, anchorId: string, position: ProjectMovePosition): void;
 }
 
 export interface GroupDragApi {
@@ -127,8 +133,9 @@ function distance(x1: number, y1: number, x2: number, y2: number): number {
 function sameDrop(a: DropTarget | null, b: DropTarget | null): boolean {
   if (a === b) return true;
   if (!a || !b || a.lineY !== b.lineY) return false;
-  if ("sectionId" in a) return "sectionId" in b && a.sectionId === b.sectionId;
-  return "anchorKey" in b && a.anchorKey === b.anchorKey && a.position === b.position;
+  if ("sectionId" in a) return "sectionId" in b && a.sectionId === b.sectionId && a.anchorKey === b.anchorKey && a.position === b.position;
+  if ("anchorId" in a) return "anchorId" in b && a.anchorId === b.anchorId && a.position === b.position;
+  return "anchorKey" in b && !("sectionId" in b) && a.anchorKey === b.anchorKey && a.position === b.position;
 }
 
 /** Laid out: not display: none itself or inside something that is (the archive view, the files tab). */
@@ -143,6 +150,9 @@ export function useGroupDrag(options: GroupDragOptions): GroupDragApi {
   const blocks = useMemo(() => groupBlocks(rows, offsets), [rows, offsets]);
   const blocksRef = useRef(blocks);
   blocksRef.current = blocks;
+  const sections = useMemo(() => sectionBlocks(rows, offsets), [rows, offsets]);
+  const sectionsRef = useRef(sections);
+  sectionsRef.current = sections;
   const dragRef = useRef<DragState | null>(null);
   // Event time (timeStamp) until which a click is the release's own; 0 = none.
   const suppressClickUntilRef = useRef(0);
@@ -154,7 +164,7 @@ export function useGroupDrag(options: GroupDragOptions): GroupDragApi {
 
     const publish = (drag: DragState) => {
       setState(drag.phase === "armed" || drag.phase === "dragging"
-        ? { projectKey: drag.projectKey, phase: drag.phase, drop: drag.drop }
+        ? { item: drag.item, phase: drag.phase, drop: drag.drop }
         : null);
     };
 
@@ -163,9 +173,10 @@ export function useGroupDrag(options: GroupDragOptions): GroupDragApi {
       const inner = options.innerRef.current;
       if (!inner) return null;
       const y = drag.clientY - inner.getBoundingClientRect().top;
-      const section = sectionDropAt(options.rows, options.offsets, blocksRef.current, drag.projectKey, y);
+      if (drag.item.kind === "section") return options.onMoveSection ? sectionReorderAt(sectionsRef.current, drag.item.key, y) : null;
+      const section = sectionDropAt(options.rows, options.offsets, blocksRef.current, drag.item.key, y);
       if (section !== undefined) return options.onAssignSection ? section : null;
-      return groupDropAt(blocksRef.current, drag.projectKey, y);
+      return groupDropAt(blocksRef.current, drag.item.key, y);
     };
 
     // The ghost follows the pointer through its style, not through React
@@ -352,8 +363,14 @@ export function useGroupDrag(options: GroupDragOptions): GroupDragApi {
         drag.clientX = event.clientX;
         drag.clientY = event.clientY;
         const drop = dropFor(drag);
-        if (drop && "sectionId" in drop) optionsRef.current.onAssignSection?.(drag.projectKey, drop.sectionId);
-        else if (drop) optionsRef.current.onMove(drag.projectKey, drop.anchorKey, drop.position);
+        if (drag.item.kind === "section") {
+          if (drop && "anchorId" in drop) optionsRef.current.onMoveSection?.(drag.item.key, drop.anchorId, drop.position);
+        } else if (drop && "sectionId" in drop) {
+          if (drop.anchorKey && drop.position) optionsRef.current.onAssignSection?.(drag.item.key, drop.sectionId, { anchorKey: drop.anchorKey, position: drop.position });
+          else optionsRef.current.onAssignSection?.(drag.item.key, drop.sectionId);
+        } else if (drop && "anchorKey" in drop) {
+          optionsRef.current.onMove(drag.item.key, drop.anchorKey, drop.position);
+        }
       }
       // A plain click (still pending) toggles the group; after a pick-up it must not.
       if (drag.phase !== "pending") suppressClickUntilRef.current = event.timeStamp + CLICK_SUPPRESS_MS;
@@ -425,7 +442,7 @@ export function useGroupDrag(options: GroupDragOptions): GroupDragApi {
 
     const handlers: GroupDragHandlers = {
       // Never preventDefault here: a plain click or tap must still toggle the group.
-      onPointerDown(event, projectKey) {
+      onPointerDown(event, item) {
         if (!optionsRef.current.enabled || dragRef.current) return;
         if (!event.isPrimary || event.button !== 0 || event.ctrlKey) return;
         // "+" and ⋯ keep their own clicks.
@@ -434,7 +451,7 @@ export function useGroupDrag(options: GroupDragOptions): GroupDragApi {
         const drag: DragState = {
           pointerId: event.pointerId,
           pointerType: event.pointerType,
-          projectKey,
+          item,
           element,
           startX: event.clientX,
           startY: event.clientY,
@@ -472,12 +489,15 @@ export function useGroupDrag(options: GroupDragOptions): GroupDragApi {
     return { handlers, cancel, teardown, updateDrag, placeGhost };
   }, []);
 
-  // New rows (a refresh, the poll, the virtual window): the dragged group may
+  // New rows (a refresh, the poll, the virtual window): the dragged item may
   // be gone (archived or deleted in another window), else the target moved.
   useLayoutEffect(() => {
     const drag = dragRef.current;
     if (!drag || (drag.phase !== "armed" && drag.phase !== "dragging")) return;
-    if (!rows.some((row) => row.kind === "group" && row.project.key === drag.projectKey)) machine.cancel();
+    const found = drag.item.kind === "project"
+      ? rows.some((row) => row.kind === "group" && row.project.key === drag.item.key)
+      : rows.some((row) => row.kind === "section" && row.sectionId === drag.item.key);
+    if (!found) machine.cancel();
     else machine.updateDrag();
   }, [rows, offsets, machine]);
 
@@ -507,9 +527,11 @@ export function useGroupDrag(options: GroupDragOptions): GroupDragApi {
 
   const view = useMemo<GroupDragView | null>(() => {
     if (!state) return null;
-    const source = state.phase === "dragging" ? blocks.find((block) => block.key === state.projectKey) ?? null : null;
+    const source = state.phase !== "dragging" ? null : state.item.kind === "project"
+      ? blocks.find((block) => block.key === state.item.key) ?? null
+      : sections.find((block) => block.sectionId === state.item.key) ?? null;
     return { ...state, source };
-  }, [state, blocks]);
+  }, [state, blocks, sections]);
 
   return { view, handlers: machine.handlers, onClickCapture, onPointerDownCapture };
 }
