@@ -20,6 +20,7 @@ import { checkModelSelector } from "./model-selector.mjs";
 import { checkFilesPlacement, showSidebarSessions } from "./sidebar.mjs";
 import { checkSessionNavigation } from "./session-navigation.mjs";
 import { checkUnreadSection } from "./session-unread.mjs";
+import { checkSessionActivity } from "./session-activity.mjs";
 import { checkProjectNavigation, createProjectNavigationFixtures } from "./project-navigation.mjs";
 import { checkGitGraphI18n } from "./git-graph-i18n.mjs";
 import { checkGitGraphColumns } from "./git-graph-columns.mjs";
@@ -589,6 +590,8 @@ try {
   await checkChangedFilesTree({ browser, base, artifacts, fixture: changedFilesTree });
   await checkProjectNavigation({ browser, base, artifacts, fixture: projectNavigation, otherSessionId: BRANCH, api, post });
   await checkOpenInApp({ browser, base, cwd: project, sessionId: RICH, artifacts });
+  // The activity checks use their own contexts and run after project navigation.
+  await checkSessionActivity({ browser, base, artifacts, api, currentId: CODE_BACKGROUND, runningId: RICH, manualId: BRANCH });
   // The unread check uses its own contexts and restores its pin; run it last
   // so its sidebar's project-order bookkeeping cannot affect earlier checks.
   await checkUnreadSection({ browser, base, artifacts, api, post, pinnedId: BRANCH, groupId: RICH, currentId: CODE_BACKGROUND });
