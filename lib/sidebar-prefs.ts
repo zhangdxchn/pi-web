@@ -9,6 +9,8 @@
  * quota errors fall back to defaults.
  */
 
+import { MAX_PROJECT_SECTIONS } from "./session-ui-state-shared";
+
 const SIDEBAR_TAB_STORAGE_KEY = "pi-web:sidebar-tab";
 const GROUP_EXPANSION_STORAGE_KEY = "pi-web:sidebar-groups-v2";
 /**
@@ -20,6 +22,7 @@ const GROUP_EXPANSION_STORAGE_KEY = "pi-web:sidebar-groups-v2";
 const LEGACY_GROUP_EXPANSION_STORAGE_KEY = "pi-web:sidebar-groups";
 const ARCHIVE_COLLAPSED_STORAGE_KEY = "pi-web:sidebar-archive-collapsed";
 const PINNED_COLLAPSED_STORAGE_KEY = "pi-web:sidebar-pins-collapsed";
+const SECTION_COLLAPSED_STORAGE_KEY = "pi-web:sidebar-project-sections-collapsed";
 const SHOW_IGNORED_FILES_STORAGE_KEY = "pi-web:sidebar-files-show-ignored";
 const FILES_COLLAPSED_STORAGE_KEY = "pi-web:sidebar-files-collapsed";
 const CHANGES_VIEW_MODE_STORAGE_KEY = "pi-web:sidebar-changes-view-mode";
@@ -33,6 +36,8 @@ const RETIRED_STORAGE_KEYS = ["pi-web:file-explorer:open", "pi-web:sidebar-sessi
 
 /** Oldest choices are dropped beyond this many project keys. */
 const MAX_GROUP_EXPANSION_ENTRIES = 300;
+/** Every Section plus Ungrouped can be folded at once. */
+const MAX_SECTION_COLLAPSED_ENTRIES = MAX_PROJECT_SECTIONS + 1;
 /** Oldest folders are dropped beyond this many. */
 const MAX_NON_GIT_CWDS = 50;
 
@@ -160,6 +165,27 @@ export function saveArchiveCollapsed(
   if (!storage) return;
   try {
     storage.setItem(ARCHIVE_COLLAPSED_STORAGE_KEY, JSON.stringify([...new Set(keys)].slice(-MAX_GROUP_EXPANSION_ENTRIES)));
+  } catch {
+    // Persistence is best-effort.
+  }
+}
+
+/** Project-section folds are local to this browser, like archive folds. */
+export function loadSectionCollapsed(storage: StorageLike | null = getBrowserStorage()): string[] {
+  if (!storage) return [];
+  try {
+    const value: unknown = JSON.parse(storage.getItem(SECTION_COLLAPSED_STORAGE_KEY) ?? "[]");
+    if (!Array.isArray(value)) return [];
+    return [...new Set(value.filter((key): key is string => typeof key === "string" && key !== ""))].slice(-MAX_SECTION_COLLAPSED_ENTRIES);
+  } catch {
+    return [];
+  }
+}
+
+export function saveSectionCollapsed(keys: readonly string[], storage: StorageLike | null = getBrowserStorage()): void {
+  if (!storage) return;
+  try {
+    storage.setItem(SECTION_COLLAPSED_STORAGE_KEY, JSON.stringify([...new Set(keys)].slice(-MAX_SECTION_COLLAPSED_ENTRIES)));
   } catch {
     // Persistence is best-effort.
   }

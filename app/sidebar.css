@@ -147,6 +147,10 @@
 }
 
 .session-tree-pinned-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -535,13 +539,45 @@ a.session-tree-main {
   background: var(--bg-hover);
 }
 
+.session-tree-group.is-sectioned,
+.session-tree-session.is-sectioned {
+  left: calc(var(--session-tree-inset-left) + 12px);
+}
+
+.session-tree-more.is-sectioned,
+.session-tree-group-empty.is-sectioned {
+  padding-left: calc(var(--session-tree-inset-left) + 32px);
+}
+
+.session-tree-project-section-name {
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+}
+
+.session-tree-section {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.session-tree-section:hover .session-tree-group-actions,
+.session-tree-section.is-active .session-tree-group-actions,
+.session-tree-section:focus-within .session-tree-group-actions,
+.session-tree.is-mobile .session-tree-section .session-tree-group-actions {
+  display: flex;
+}
+
 /* The project's name field (its menu's Rename…) in place of the header. */
 .session-tree-group.is-renaming {
   padding-left: 4px;
 }
 
 /* Picked up by a long-press, before the finger moves. */
-.session-tree-group.is-drag-armed {
+.session-tree-group.is-drag-armed,
+.session-tree-section.is-drag-armed {
   background: var(--bg-selected);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
 }

@@ -23,6 +23,7 @@ import {
   keepOutgoingGroupOpen,
   nextProjectKeysToRecord,
   PINNED_MORE_KEY,
+  UNGROUPED_SECTION_KEY,
   showLessFamilies,
   showMoreFamilies,
   type SidebarProject,
@@ -35,6 +36,7 @@ import {
   loadGroupExpansion,
   loadNonGitCwds,
   loadPinnedCollapsed,
+  loadSectionCollapsed,
   loadShowIgnoredFiles,
   loadSidebarTab,
   rememberCwdGitStatus,
@@ -42,6 +44,7 @@ import {
   saveFilesCollapsed,
   saveGroupExpansion,
   savePinnedCollapsed,
+  saveSectionCollapsed,
   saveShowIgnoredFiles,
   saveSidebarTab,
   type SidebarTab,
@@ -73,6 +76,7 @@ import {
   chunkForSessionUiRequests,
   MAX_PROJECT_ORDER_KEYS,
   MAX_SESSION_UI_IDS_PER_REQUEST,
+  sectionDisplayName,
   type ProjectMovePosition,
   type SessionUiStateRequest,
 } from "@/lib/session-ui-state-shared";
@@ -302,6 +306,9 @@ type SessionRow = Extract<SidebarRow, { kind: "session" }>;
 type SidebarMenuState =
   | { kind: "row"; row: SessionRow; anchor: SidebarMenuAnchor; opener: HTMLElement | null }
   | { kind: "group"; project: SidebarProject; olderCount: number; anchor: SidebarMenuAnchor; opener: HTMLElement; askDelete?: boolean }
+  | { kind: "section-destination"; project: SidebarProject; anchor: SidebarMenuAnchor; opener: HTMLElement }
+  | { kind: "section-form"; sectionId?: string; projectKey?: string; anchor: SidebarMenuAnchor; opener: HTMLElement }
+  | { kind: "section"; sectionId: string; anchor: SidebarMenuAnchor; opener: HTMLElement; askDelete?: boolean }
   | { kind: "archive-group"; project: SidebarProject; anchor: SidebarMenuAnchor; opener: HTMLElement; askDelete?: boolean }
   | { kind: "archive"; anchor: SidebarMenuAnchor; opener: HTMLElement; askDelete?: ArchiveDeleteScope };
 
@@ -596,6 +603,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [keptOpenGroups, setKeptOpenGroups] = useState<ReadonlySet<string>>(() => new Set());
   const [moreShown, setMoreShown] = useState<Readonly<Record<string, number>>>({});
   const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
+  const [sectionCollapsed, setSectionCollapsed] = useState<readonly string[]>([]);
+  const [sectionDraft, setSectionDraft] = useState("");
+  const [sectionError, setSectionError] = useState<string | null>(null);
+  const [sectionSaving, setSectionSaving] = useState(false);
   // The archive view's folded projects, per browser (lib/sidebar-prefs.ts).
   const [archiveCollapsed, setArchiveCollapsed] = useState<readonly string[]>([]);
   const [archiveView, setArchiveViewState] = useState(false);
@@ -750,6 +761,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     const groups = loadGroupExpansion();
     if (Object.keys(groups).length > 0) setGroupExpansion(groups);
     if (loadPinnedCollapsed()) setPinnedCollapsed(true);
+    setSectionCollapsed(loadSectionCollapsed());
     const archiveFolds = loadArchiveCollapsed();
     if (archiveFolds.length > 0) setArchiveCollapsed(archiveFolds);
     if (loadFilesCollapsed()) setFilesCollapsed(true);
@@ -1482,7 +1494,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     groupExpansion: shownGroupExpansion,
     moreShown,
     pinnedCollapsed,
-  }), [allSessions, uiState, runningSessionIds, awaitingInputSessionIds, unreadSessionIds, selectedSessionId, currentProject, shownGroupExpansion, moreShown, pinnedCollapsed]);
+    sectionCollapsed: new Set(sectionCollapsed),
+  }), [allSessions, uiState, runningSessionIds, awaitingInputSessionIds, unreadSessionIds, selectedSessionId, currentProject, shownGroupExpansion, moreShown, pinnedCollapsed, sectionCollapsed]);
   // Built while the archive view is rendered, its way out included: it
   // leaves as it was, not empty.
   const archiveMounted = archiveMotion.archiveMounted;
@@ -1610,11 +1623,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     return selectedTabButton();
   }, [selectedTabButton]);
 
-  // A project's group header (its toggle), else the selected tab.
-  const groupHeaderButton = useCallback((projectKey: string): HTMLElement | null => {
+  // A project's group header (its toggle), else the requested fallback or selected tab.
+  const groupHeaderButton = useCallback((projectKey: string, fallback: () => HTMLElement | null = selectedTabButton): HTMLElement | null => {
     const key = CSS.escape(`group:${projectKey}`);
     const button = sessionsPanelRef.current?.querySelector<HTMLElement>(`[data-row-key="${key}"] .session-tree-group-toggle`);
-    return button && button.getClientRects().length > 0 ? button : selectedTabButton();
+    return button && button.getClientRects().length > 0 ? button : fallback();
   }, [selectedTabButton]);
 
   // Pin and archive changes apply at once and are saved in the background; a
@@ -1641,12 +1654,38 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     const project = projectByKey.get(projectKey);
     const anchor = projectByKey.get(anchorKey);
     // Pinned or unpinned in another window meanwhile: a move never crosses bands.
-    if (!project || !anchor || project === anchor || project.pinned !== anchor.pinned) return;
+    if (!project || !anchor || project === anchor || project.pinned !== anchor.pinned || (!project.pinned && project.sectionId !== anchor.sectionId)) return;
     const add = model.unorderedKeysByBand[project.pinned ? "pinned" : "other"].slice(-MAX_SESSION_UI_IDS_PER_REQUEST);
     void applyUiState({ action: "move-project", projectKey, anchorKey, position, add });
     treeRevealIdRef.current += 1;
     setTreeReveal({ id: treeRevealIdRef.current, at: Date.now(), rowKey: `group:${projectKey}` });
   }, [applyUiState, model.unorderedKeysByBand, projectByKey]);
+
+  const openSection = useCallback((sectionId: string | null) => {
+    const key = sectionId ?? UNGROUPED_SECTION_KEY;
+    setSectionCollapsed((current) => {
+      const next = current.filter((item) => item !== key);
+      saveSectionCollapsed(next);
+      return next;
+    });
+  }, []);
+  const toggleSection = useCallback((sectionId: string | null) => {
+    const key = sectionId ?? UNGROUPED_SECTION_KEY;
+    setSectionCollapsed((current) => {
+      const next = current.includes(key) ? current.filter((item) => item !== key) : [...current, key];
+      saveSectionCollapsed(next);
+      return next;
+    });
+  }, []);
+  const assignProject = useCallback((projectKey: string, sectionId: string | null, placement?: { anchorKey: string; position: ProjectMovePosition }) => {
+    const project = projectByKey.get(projectKey);
+    if (!project || (project.sectionId ?? null) === sectionId) return;
+    openSection(sectionId);
+    const add = model.unorderedKeysByBand.other.slice(-MAX_SESSION_UI_IDS_PER_REQUEST);
+    void applyUiState({ action: "assign-project-section", projectKey, sectionId, add, ...placement });
+    treeRevealIdRef.current += 1;
+    setTreeReveal({ id: treeRevealIdRef.current, at: Date.now(), rowKey: `group:${projectKey}` });
+  }, [applyUiState, model.unorderedKeysByBand.other, openSection, projectByKey]);
 
   // With the files below the sessions there are no tabs: whatever would pick
   // one (the archive view, the search's fallback) leaves the saved tab as it
@@ -1958,6 +1997,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       setArchiveView(false);
     }
     const groupKey = workspaceKeyOf(forked);
+    if (uiState.sections?.length && !Object.hasOwn(uiState.projects, groupKey)) {
+      const sectionId = uiState.projectSections && Object.hasOwn(uiState.projectSections, groupKey) ? uiState.projectSections[groupKey] : null;
+      openSection(sectionId);
+    }
     if (Object.hasOwn(shownGroupExpansion, groupKey) && shownGroupExpansion[groupKey] === false) {
       const next = { ...groupExpansion };
       // Re-inserted, so the choice counts as the newest one kept.
@@ -2405,6 +2448,16 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       ...nameItems,
       {
         type: "item",
+        id: "move-to-section",
+        label: t("sidebar.moveToSection"),
+        onSelect: ({ keepOpen }) => {
+          if (menu?.kind !== "group") return;
+          keepOpen();
+          setMenu({ kind: "section-destination", project, anchor: menu.anchor, opener: menu.opener });
+        },
+      },
+      {
+        type: "item",
         id: "open-in-files",
         label: t("sidebar.openInFilesTab"),
         icon: <FolderIcon />,
@@ -2620,6 +2673,29 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     onCancel: () => askArchiveDelete(undefined),
   });
 
+  const beginSectionForm = (anchor: SidebarMenuAnchor, opener: HTMLElement, sectionId?: string, projectKey?: string) => {
+    setSectionDraft(uiState.sections?.find((section) => section.id === sectionId)?.name ?? "");
+    setSectionError(null);
+    setMenu({ kind: "section-form", anchor, opener, ...(sectionId ? { sectionId } : {}), ...(projectKey ? { projectKey } : {}) });
+  };
+  const submitSection = async () => {
+    if (menu?.kind !== "section-form" || sectionSaving) return;
+    const name = sectionDisplayName(sectionDraft);
+    if (!name) { setSectionError(t("sidebar.sectionNameInvalid")); return; }
+    if (uiState.sections?.some((section) => section.name === name && section.id !== menu.sectionId)) {
+      setSectionError(t("sidebar.sectionNameDuplicate"));
+      return;
+    }
+    const id = menu.sectionId ?? createTempSessionId();
+    const request: SessionUiStateRequest = menu.sectionId
+      ? { action: "rename-section", id, name }
+      : { action: "create-section", id, name, ...(menu.projectKey ? { projectKey: menu.projectKey } : {}) };
+    setSectionSaving(true);
+    const ok = await applyUiState(request);
+    setSectionSaving(false);
+    if (ok) { openSection(id); setMenu((current) => current === menu ? null : current); }
+  };
+
   let menuTitle: string | undefined;
   let menuLabel = "";
   // Room for "Archive sessions older than 7 days · N".
@@ -2638,6 +2714,48 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     menuItems = groupMenuItems(project, menu.olderCount);
     if (menu.askDelete) menuBody = projectDeleteBody(project);
     menuWidth = 264;
+  } else if (menu?.kind === "section-destination") {
+    const project = projectByKey.get(menu.project.key) ?? menu.project;
+    menuTitle = project.name;
+    menuLabel = t("sidebar.moveToSection");
+    menuItems = [
+      { type: "item", id: "back", label: t("sidebar.backToProjectActions"), onSelect: ({ keepOpen }) => {
+        keepOpen();
+        const olderCount = familiesToArchive(treeSelectionInput, project.key, ARCHIVE_OLDER_THAN_MS, Date.now()).length;
+        setMenu({ kind: "group", project, olderCount, anchor: menu.anchor, opener: menu.opener });
+      } },
+      { type: "separator", id: "choices-separator" },
+      { type: "item", id: "ungrouped", label: t("sidebar.ungroupedSection"), checked: !project.sectionId, onSelect: () => assignProject(project.key, null) },
+      ...(uiState.sections ?? []).map((section): SidebarMenuItem => ({ type: "item", id: section.id, label: section.name, checked: project.sectionId === section.id, onSelect: () => assignProject(project.key, section.id) })),
+      { type: "separator", id: "new-section-separator" },
+      { type: "item", id: "new-section", label: t("sidebar.createSection"), onSelect: ({ keepOpen }) => { keepOpen(); beginSectionForm(menu.anchor, menu.opener, undefined, project.key); } },
+    ];
+  } else if (menu?.kind === "section-form") {
+    menuTitle = menu.sectionId ? t("sidebar.renameSection") : t("sidebar.createSection");
+    menuLabel = menuTitle;
+    menuBody = <form className="sidebar-worktree-form" onSubmit={(event) => { event.preventDefault(); void submitSection(); }} onKeyDown={(event) => { if (event.key === "Enter" && (event.nativeEvent.isComposing || event.keyCode === 229)) event.preventDefault(); }}>
+      <label className="sidebar-menu-header" htmlFor="sidebar-section-name">{t("sidebar.sectionName")}</label>
+      <input id="sidebar-section-name" className="sidebar-worktree-input" data-sidebar-menu-autofocus="" value={sectionDraft} maxLength={160} onChange={(event) => { setSectionDraft(event.target.value); setSectionError(null); }} />
+      {sectionError && <div className="sidebar-worktree-error" role="alert">{sectionError}</div>}
+      <div className="sidebar-worktree-form-buttons"><button type="submit" className="sidebar-worktree-create" disabled={sectionSaving}>{t("sidebar.saveSection")}</button>{!isMobile && <button type="button" className="sidebar-worktree-cancel" onClick={() => setMenu(null)}>{t("sidebar.cancel")}</button>}</div>
+    </form>;
+  } else if (menu?.kind === "section") {
+    const sections = uiState.sections ?? [];
+    const section = sections.find((item) => item.id === menu.sectionId);
+    const index = sections.findIndex((item) => item.id === menu.sectionId);
+    menuTitle = section?.name ?? "";
+    menuLabel = t("sidebar.sectionActions", { name: menuTitle });
+    menuItems = [
+      { type: "item", id: "rename", label: t("sidebar.renameSection"), icon: <PencilIcon />, onSelect: ({ keepOpen }) => { keepOpen(); beginSectionForm(menu.anchor, menu.opener, menu.sectionId); } },
+      { type: "item", id: "up", label: t("sidebar.moveSectionUp"), disabled: index <= 0, onSelect: () => { if (index > 0) void applyUiState({ action: "move-section", id: menu.sectionId, anchorId: sections[index - 1].id, position: "before" }); } },
+      { type: "item", id: "down", label: t("sidebar.moveSectionDown"), disabled: index < 0 || index >= sections.length - 1, onSelect: () => { if (index >= 0 && index < sections.length - 1) void applyUiState({ action: "move-section", id: menu.sectionId, anchorId: sections[index + 1].id, position: "after" }); } },
+      { type: "separator", id: "delete-separator" },
+      { type: "item", id: "delete", label: t("sidebar.deleteSection"), danger: true, icon: <TrashIcon />, onSelect: ({ keepOpen }) => { keepOpen(); setMenu({ ...menu, askDelete: true }); } },
+    ];
+    if (menu.askDelete) {
+      const count = Object.values(uiState.projectSections ?? {}).filter((id) => id === menu.sectionId).length;
+      menuBody = <div className="sidebar-menu-question"><div className="sidebar-menu-header">{t("sidebar.deleteSectionHeading", { name: menuTitle })}</div><p className="sidebar-menu-question-text">{t("sidebar.deleteSectionMessage", { count })}</p><div className="sidebar-menu-question-buttons"><button type="button" className="sidebar-menu-question-confirm" onClick={() => { openSection(null); void applyUiState({ action: "delete-section", id: menu.sectionId }); setMenu(null); }}>{t("sidebar.delete")}</button>{!isMobile && <button type="button" className="sidebar-menu-question-cancel" data-sidebar-menu-autofocus="" onClick={() => setMenu({ ...menu, askDelete: false })}>{t("sidebar.cancel")}</button>}</div></div>;
+    }
   } else if (menu?.kind === "archive-group") {
     const project = archiveGroups.find((row) => row.project.key === menu.project.key)?.project ?? menu.project;
     menuTitle = project.name;
@@ -2656,7 +2774,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // The tree row (and the button in it) that the open menu belongs to.
   const activeMenuRowKey = menu?.kind === "row"
     ? menu.row.key
-    : menu?.kind === "group" ? `group:${menu.project.key}`
+    : menu?.kind === "group" || menu?.kind === "section-destination" ? `group:${menu.project.key}`
+    : menu?.kind === "section" ? `section:${menu.sectionId}`
     : menu?.kind === "archive-group" ? `archive:${menu.project.key}` : null;
 
   const treeLayout = isMobile ? "mobile" : "desktop";
@@ -2675,6 +2794,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     onShowMore: handleShowMore,
     onShowLess: handleShowLess,
     onTogglePinned: handleTogglePinned,
+    onToggleSection: toggleSection,
+    onSectionMenu: (sectionId: string, opener: HTMLElement) => setMenu({ kind: "section", sectionId, anchor: buttonAnchor(opener, "end"), opener }),
+    onCreateSection: (opener: HTMLElement) => beginSectionForm(buttonAnchor(opener, "end"), opener),
     onArchiveFamily: archiveFamily,
     onRestoreFamily: restoreFamily,
     onOpenRowMenu: openRowMenu,
@@ -2703,6 +2825,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     onOpenArchive: () => openArchiveView(),
     // The archive view has no group rows: only the main tree's can be dragged.
     onMoveGroup: moveProject,
+    onAssignSection: assignProject,
+    onMoveSection: (sectionId: string, anchorId: string, position: ProjectMovePosition) => { void applyUiState({ action: "move-section", id: sectionId, anchorId, position }); },
   } as const;
 
   const explorerCwd = selectedCwd ?? selectedCwdProp ?? null;
@@ -3211,7 +3335,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         title={menuTitle}
         items={menuItems}
         cancelLabel={t("sidebar.cancel")}
-        focusCancel={menuBody !== null}
+        focusCancel={menuBody !== null && menu?.kind !== "section-form"}
+        focusKey={menu?.kind === "section" && menu.askDelete ? "section-delete" : menu?.kind}
         onClose={closeMenu}
         returnFocusTo={menu?.opener ?? null}
         width={menuWidth}

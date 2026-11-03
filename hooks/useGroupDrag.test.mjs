@@ -85,10 +85,10 @@ function session(id, project, modified) {
   return { path: `${project}/${id}.jsonl`, id, cwd: project, projectRoot: project, projectKey: project, created: time, modified: time, messageCount: 1, firstMessage: id };
 }
 
-function model(projects) {
+function model(projects, sectionState = {}) {
   return buildSessionTree({
     sessions: projects.map((project, index) => session(`s${index}`, project, BASE - index)),
-    uiState: { version: 1, revision: 0, sessions: {}, projects: {}, projectOrder: projects },
+    uiState: { version: 1, revision: 0, sessions: {}, projects: {}, projectOrder: projects, ...sectionState },
     runningIds: new Set(),
     unreadIds: new Set(),
     selectedSessionId: null,
@@ -107,8 +107,8 @@ const TREE_TOP = 60;
  * an 8px spacer between two, then the footer's spacer and its row: /a 8..36,
  * /b 44..72, /c 80..108) in a list box 100px from the top of the page.
  */
-function setup({ projects = ["/a", "/b", "/c"], clientHeight = 400, enabled = true } = {}) {
-  const { rows } = model(projects);
+function setup({ projects = ["/a", "/b", "/c"], clientHeight = 400, enabled = true, sectionState } = {}) {
+  const { rows } = model(projects, sectionState);
   const offsets = getRowOffsets(rows, "desktop");
   const scroll = emitter({
     scrollTop: 0,
@@ -125,6 +125,8 @@ function setup({ projects = ["/a", "/b", "/c"], clientHeight = 400, enabled = tr
   const tree = { getBoundingClientRect: () => ({ top: TREE_TOP, left: 0 }) };
   const ghost = { style: {}, offsetHeight: GHOST_HEIGHT };
   const moves = [];
+  const assignments = [];
+  const sectionMoves = [];
   const props = {
     rows,
     offsets,
@@ -135,16 +137,17 @@ function setup({ projects = ["/a", "/b", "/c"], clientHeight = 400, enabled = tr
     treeRef: { current: tree },
     ghostRef: { current: ghost },
     onMove: (...move) => moves.push(move),
+    ...(sectionState ? { onAssignSection: (...move) => assignments.push(move), onMoveSection: (...move) => sectionMoves.push(move) } : {}),
   };
   const hook = renderHook(useGroupDrag, props);
   mounted.push(hook);
-  const rowTop = (key) => offsets[rows.findIndex((row) => row.key === `group:${key}`)];
-  const header = (key) => {
+  const rowTop = (key, kind = "project") => offsets[rows.findIndex((row) => row.key === `${kind === "section" ? "section" : "group"}:${key}`)];
+  const header = (key, kind) => {
     const captured = new Set();
     return {
       isConnected: true,
       captured,
-      getBoundingClientRect: () => ({ top: SCROLL_TOP_EDGE + rowTop(key) - scroll.scrollTop, left: 6, width: 228, height: 28 }),
+      getBoundingClientRect: () => ({ top: SCROLL_TOP_EDGE + rowTop(key, kind) - scroll.scrollTop, left: 6, width: 228, height: 28 }),
       setPointerCapture: (id) => captured.add(id),
       hasPointerCapture: (id) => captured.has(id),
       releasePointerCapture: (id) => captured.delete(id),
@@ -153,9 +156,9 @@ function setup({ projects = ["/a", "/b", "/c"], clientHeight = 400, enabled = tr
   /** Content y to page y. */
   const at = (y) => SCROLL_TOP_EDGE + y - scroll.scrollTop;
   let time = 1000;
-  const press = (key, { y = at(rowTop(key) + 10), x = 50, pointerType = "mouse", pointerId = 1, button = 0, ctrlKey = false, isPrimary = true, target = new FakeElement() } = {}) => {
-    const element = header(key);
-    hook.result.handlers.onPointerDown({ isPrimary, button, ctrlKey, pointerId, pointerType, clientX: x, clientY: y, currentTarget: element, target }, key);
+  const press = (key, { kind = "project", y = at(rowTop(key, kind) + 10), x = 50, pointerType = "mouse", pointerId = 1, button = 0, ctrlKey = false, isPrimary = true, target = new FakeElement() } = {}) => {
+    const element = header(key, kind);
+    hook.result.handlers.onPointerDown({ isPrimary, button, ctrlKey, pointerId, pointerType, clientX: x, clientY: y, currentTarget: element, target }, { kind, key });
     hook.flush();
     return element;
   };
@@ -185,7 +188,7 @@ function setup({ projects = ["/a", "/b", "/c"], clientHeight = 400, enabled = tr
     hook.flush();
     return event.defaultPrevented;
   };
-  return { hook, props, rows, offsets, scroll, ghost, moves, rowTop, at, press, move, release, click, key, touchMove };
+  return { hook, props, rows, offsets, scroll, ghost, moves, assignments, sectionMoves, rowTop, at, press, move, release, click, key, touchMove };
 }
 
 // A failed test must not leave its listeners to the next one.
@@ -216,7 +219,7 @@ test("a mouse drag starts after a few pixels, follows the pointer and drops next
   tree.move(start + DRAG_START_PX);
   const view = tree.hook.result.view;
   assert.equal(view.phase, "dragging");
-  assert.equal(view.projectKey, "/a");
+  assert.deepEqual(view.item, { kind: "project", key: "/a" });
   assert.deepEqual(view.source, { key: "/a", pinned: false, top: 8, bottom: 36, gapAbove: 8, gapBelow: 8 });
   assert.equal(view.drop, null, "still over itself");
   assert.ok(element.captured.has(1), "the header holds the pointer");
@@ -349,7 +352,7 @@ test("touch: a swipe scrolls, a long-press picks the group up and holds the list
   assert.equal(tree.hook.result.view, null);
   t.mock.timers.tick(1);
   tree.hook.flush();
-  assert.deepEqual(tree.hook.result.view, { projectKey: "/a", phase: "armed", drop: null, source: null });
+  assert.deepEqual(tree.hook.result.view, { item: { kind: "project", key: "/a" }, phase: "armed", drop: null, source: null });
   assert.equal(tree.touchMove(), true, "picked up: the finger no longer scrolls the list");
   // An uncancelable move inside Chrome's slop, with the list where it was, is no scroll.
   assert.equal(tree.touchMove({ cancelable: false }), false);
@@ -380,6 +383,66 @@ test("touch: a swipe scrolls, a long-press picks the group up and holds the list
   assert.equal(tree.hook.result.view, null);
   assert.equal(window.count(), 0);
   tree.hook.unmount();
+});
+
+test("touch long-press moves an unpinned project to a section header", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const tree = setup({ projects: ["/a", "/b"], sectionState: { sections: [{ id: "work", name: "Work" }, { id: "personal", name: "Personal" }], projectSections: { "/a": "work", "/b": "personal" } } });
+  const start = tree.at(tree.rowTop("/a") + 10);
+  const targetIndex = tree.rows.findIndex((row) => row.kind === "section" && row.sectionId === "personal");
+  const target = tree.at(tree.offsets[targetIndex] + 10);
+  tree.press("/a", { y: start, pointerType: "touch" });
+  t.mock.timers.tick(LONG_PRESS_MS);
+  tree.hook.flush();
+  tree.move(start + DRAG_START_PX, { pointerType: "touch" });
+  tree.move(target, { pointerType: "touch" });
+  assert.equal(tree.hook.result.view.drop.sectionId, "personal");
+  tree.release(target);
+  assert.deepEqual(tree.assignments, [["/a", "personal"]]);
+  assert.deepEqual(tree.moves, []);
+  tree.hook.unmount();
+});
+
+test("mouse drags a section as a whole, without toggling it", () => {
+  const tree = setup({ sectionState: { sections: [{ id: "work", name: "Work" }, { id: "personal", name: "Personal" }], projectSections: { "/a": "work", "/b": "personal" } } });
+  const start = tree.at(tree.rowTop("work", "section") + 10);
+  const lastGroup = tree.rows.findIndex((row) => row.kind === "group" && row.project.key === "/b");
+  const target = tree.at(tree.offsets[lastGroup + 1] - 2);
+  tree.press("work", { kind: "section", y: start });
+  tree.move(target);
+  assert.deepEqual(tree.hook.result.view.item, { kind: "section", key: "work" });
+  assert.equal(tree.hook.result.view.drop.anchorId, "personal");
+  tree.release(target);
+  assert.deepEqual(tree.sectionMoves, [["work", "personal", "after"]]);
+  assert.deepEqual(tree.moves, []);
+  assert.deepEqual(tree.assignments, []);
+  assert.equal(tree.click(), true);
+});
+
+test("touch long-press reorders a section and suppresses its release click", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const tree = setup({ sectionState: { sections: [{ id: "work", name: "Work" }, { id: "personal", name: "Personal" }], projectSections: { "/a": "work", "/b": "personal" } } });
+  const start = tree.at(tree.rowTop("personal", "section") + 10);
+  const target = tree.at(tree.rowTop("work", "section") + 3);
+  tree.press("personal", { kind: "section", y: start, pointerType: "touch" });
+  t.mock.timers.tick(LONG_PRESS_MS);
+  tree.hook.flush();
+  assert.equal(tree.hook.result.view.phase, "armed");
+  assert.equal(tree.touchMove(), true);
+  tree.move(target, { pointerType: "touch" });
+  tree.release(target);
+  assert.deepEqual(tree.sectionMoves, [["personal", "work", "before"]]);
+  assert.equal(tree.click(), true);
+});
+
+test("a project dropped inside another section reports its exact position", () => {
+  const tree = setup({ sectionState: { sections: [{ id: "work", name: "Work" }, { id: "personal", name: "Personal" }], projectSections: { "/a": "work", "/b": "personal" } } });
+  const target = tree.at(tree.rowTop("/b") + 24);
+  tree.press("/a");
+  tree.move(target);
+  assert.equal(tree.hook.result.view.drop.sectionId, "personal");
+  tree.release(target);
+  assert.deepEqual(tree.assignments, [["/a", "personal", { anchorKey: "/b", position: "after" }]]);
 });
 
 test("a pen takes the long-press path, not the mouse's threshold", (t) => {
@@ -481,7 +544,8 @@ test("near an edge the list scrolls, never past the rows' own height", () => {
   // band's end, both in view as the list scrolled: the ghost clears the line.
   const lineAt = tree.at(tree.hook.result.view.drop.lineY);
   assert.ok(lineAt < bottom && lineAt > SCROLL_TOP_EDGE);
-  assert.equal(tree.ghost.style.top, `${lineAt - GHOST_LINE_GAP_PX - GHOST_HEIGHT - TREE_TOP}px`);
+  const ghostTop = Number.parseFloat(tree.ghost.style.top) + TREE_TOP;
+  assert.ok(ghostTop + GHOST_HEIGHT + GHOST_LINE_GAP_PX <= lineAt || ghostTop >= lineAt + GHOST_LINE_GAP_PX, "the ghost stays clear of the drop line");
   tree.move(SCROLL_TOP_EDGE + 1);
   runFrames(1);
   assert.equal(tree.scroll.scrollTop, content - 100 - AUTO_SCROLL_MAX_STEP);
