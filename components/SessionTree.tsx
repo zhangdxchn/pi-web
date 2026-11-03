@@ -402,7 +402,7 @@ export function SessionTree(props: SessionTreeProps): ReactNode {
     }
   }, [visibleIndices]);
 
-  const hasTreeRows = rows.some((row) => row.kind === "session" || row.kind === "group" || row.kind === "section" || row.kind === "unread-header" || row.kind === "pinned-header");
+  const hasTreeRows = rows.some((row) => row.kind === "session" || row.kind === "group" || row.kind === "archive-group" || row.kind === "section" || row.kind === "unread-header" || row.kind === "pinned-header");
   const showEmpty = !loading && !error && emptyLabel !== null && !hasTreeRows;
   // While dragging: the group's block is dimmed in place (groups never fold
   // up under the pointer), a line marks the drop, and a pill with the
@@ -815,7 +815,8 @@ function RenameInput({
   );
 }
 
-function DeleteConfirm({
+/** A row's delete confirmation; also a side chat's in the Agents switcher (AgentSessionPanel). */
+export function DeleteConfirm({
   label,
   deleteLabel,
   cancelLabel,

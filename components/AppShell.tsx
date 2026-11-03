@@ -77,8 +77,8 @@ import type { SessionStatsInfo } from "@/lib/pi-types";
 import { formatActiveDuration, formatCompactCount, formatCostShort } from "@/lib/session-stats-format";
 import type { FileViewerState } from "@/lib/file-viewer-state";
 import { PRESET_READ_ONLY, type ToolEntry } from "@/lib/tool-presets";
-import { createSideChat } from "@/lib/side-chat-client";
-import { getAgentsBadge, getFoldedMoreAgentsBadge, getSessionFamily, isHiddenRelation, sideChatNameFrom, sideChatTitle } from "@/lib/session-family";
+import { createSideChat, deleteSideChat } from "@/lib/side-chat-client";
+import { getAgentsBadge, getSessionFamily, isHiddenRelation, sideChatNameFrom, sideChatTitle } from "@/lib/session-family";
 import { getLastSettingsSection, settingsSectionRequiresProject, type SettingsSection } from "@/lib/settings-navigation";
 import { focusIfLost } from "@/lib/stacked-dialog";
 
@@ -89,7 +89,8 @@ type AutoNameStatus =
   | { kind: "success" }
   | { kind: "error"; message: string };
 
-const TOP_BAR_ICON_BUTTON_SIZE = 36;
+// app/globals.css: 36px, 44px on a phone or touch screen.
+const TOP_BAR_ICON_BUTTON_SIZE = "var(--top-bar-height)";
 const AGENT_PANEL_WIDTH = 420;
 // pi's built-in tools that never change a file; any other tool may (#1144).
 const READ_ONLY_TOOL_NAMES = new Set(PRESET_READ_ONLY);
@@ -231,6 +232,8 @@ export function AppShell() {
   }, []);
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
+  // The plain Settings button opens a phone's Settings on its list of sections; shortcuts open theirs.
+  const [settingsOpenAtHome, setSettingsOpenAtHome] = useState(false);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
   const [projectTrust, setProjectTrust] = useState<ProjectTrustStatus | null>(null);
   const [projectTrustDialogOpen, setProjectTrustDialogOpen] = useState(false);
@@ -245,13 +248,7 @@ export function AppShell() {
     if (!rightPanelOpen || isMobile) setRightPanelExpanded(false);
   }, [rightPanelOpen, isMobile]);
   const [mobileToolbarMoreOpen, setMobileToolbarMoreOpen] = useState(false);
-  // A narrow phone folds the Agents button into More: the folded button says that subagents run.
-  const foldedMoreAgentsBadge = isNarrowMobile ? getFoldedMoreAgentsBadge(agentsBadge, mobileToolbarMoreOpen) : null;
-  const moreControlsLabel = mobileToolbarMoreOpen
-    ? translate("chat.close")
-    : foldedMoreAgentsBadge
-      ? translate("chat.moreControlsAgentsRunning", { count: foldedMoreAgentsBadge.count })
-      : translate("chat.moreControls");
+  const moreControlsLabel = mobileToolbarMoreOpen ? translate("chat.close") : translate("chat.moreControls");
   const [mobileSidebarReady, setMobileSidebarReady] = useState(false);
   const sidebarWidthRef = useRef(SIDEBAR_DEFAULT_WIDTH);
   const rightPanelWidthRef = useRef(RIGHT_PANEL_FALLBACK_WIDTH);
@@ -477,6 +474,7 @@ export function AppShell() {
 
   // The composer opens Settings too: a bare /mcp opens Settings › MCP (useAgentSession).
   const openSettingsSection = useCallback((section: SettingsSection) => {
+    setSettingsOpenAtHome(false);
     setSettingsSection(section);
   }, []);
 
@@ -1396,6 +1394,22 @@ export function AppShell() {
     });
   }, [fileTabs, terminalTabs, agentTabs, gitGraphOpen, activeCwd]);
 
+  // The Agents switcher's Delete on a side chat: its tab goes with it, and the
+  // main chat showing it goes back to the parent, as the Main agent row does
+  // (`handleSessionDeleted` would leave the family for a fresh composer).
+  const handleDeleteSideChat = useCallback(async (sessionId: string, root: SessionInfo): Promise<string | null> => {
+    const result = await deleteSideChat(sessionId);
+    if (result) return result.error;
+    handleCloseFileTab(`agent:${sessionId}`);
+    if (selectedSessionRef.current?.id === sessionId) {
+      handleSelectSession(root);
+      setRefreshKey((key) => key + 1);
+    } else {
+      handleSessionDeleted(sessionId);
+    }
+    return null;
+  }, [handleCloseFileTab, handleSelectSession, handleSessionDeleted]);
+
   // One session, one chat: opening a subagent or side chat in the main chat closes its tab.
   const selectedSessionId = selectedSession?.id;
   useEffect(() => {
@@ -1597,7 +1611,7 @@ export function AppShell() {
             <button
               key={section}
               type="button"
-              onClick={() => setSettingsSection(section)}
+              onClick={() => openSettingsSection(section)}
               disabled={disabled}
               title={disabled ? translate("settings.projectRequired") : label}
               aria-label={label}
@@ -1618,7 +1632,10 @@ export function AppShell() {
         })}
         <button
           type="button"
-          onClick={() => setSettingsSection(getLastSettingsSection(projectTrustCwd))}
+          onClick={() => {
+            setSettingsOpenAtHome(true);
+            setSettingsSection(getLastSettingsSection(projectTrustCwd));
+          }}
           title={translate("common.settings")}
           aria-label={translate("common.settings")}
           style={{
@@ -1717,6 +1734,41 @@ export function AppShell() {
     </span>
   );
 
+  // The Agents switcher's button. A narrow phone shows it left of the More button instead of
+  // folding it into that menu: the bar has the room, and the badge stays in sight.
+  const renderAgentsButton = (mobile: boolean) => (
+    <button
+      type="button"
+      // On a narrow phone it sits outside the More menu, so it leaves that menu as it is.
+      onClick={() => toggleTopPanel("agents", mobile && !isNarrowMobile)}
+      disabled={!activeSessionFamily}
+      title={agentsButtonLabel}
+      aria-label={agentsButtonLabel}
+      aria-pressed={activeTopPanel === "agents"}
+      style={{
+        position: "relative",
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+        width: mobile ? TOP_BAR_ICON_BUTTON_SIZE : undefined,
+        height: "100%", padding: mobile ? 0 : "0 12px",
+        background: activeTopPanel === "agents" ? "var(--bg-selected)" : "none",
+        border: "none",
+        borderTop: activeTopPanel === "agents" ? "2px solid var(--accent)" : "2px solid transparent",
+        borderRight: "1px solid var(--border)",
+        color: activeTopPanel === "agents" ? "var(--text)" : activeSessionFamily ? "var(--text-muted)" : "var(--text-dim)",
+        cursor: activeSessionFamily ? "pointer" : "not-allowed", opacity: activeSessionFamily ? 1 : 0.45,
+        flexShrink: 0, fontSize: 11, whiteSpace: "nowrap",
+        transition: "color 0.1s, background 0.1s",
+      }}
+      data-mobile-toolbar-action={mobile ? "agents" : undefined}
+    >
+      <svg width={mobile ? 16 : 13} height={mobile ? 16 : 13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <rect x="5" y="7" width="14" height="11" rx="2" /><path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
+      </svg>
+      {!mobile && <span>{translate("agentSwitcher.title")}</span>}
+      {agentsBadge && agentsBadge.count > 0 && renderAgentsBadge(agentsBadge, mobile)}
+    </button>
+  );
+
   const renderChatToolbarActions = (mobile: boolean) => {
     if (!mobile && !showChat) return null;
     return (
@@ -1762,8 +1814,8 @@ export function AppShell() {
           data-mobile-toolbar-action={mobile ? "history" : undefined}
         >
           <svg
-            width="12"
-            height="12"
+            width={mobile ? 16 : 12}
+            height={mobile ? 16 : 12}
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -1841,16 +1893,16 @@ export function AppShell() {
               data-mobile-toolbar-action={mobile ? "name" : undefined}
             >
               {autoNameStatus.kind === "naming" ? (
-                <svg className="animate-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <svg className="animate-spin" width={mobile ? 16 : 13} height={mobile ? 16 : 13} viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" opacity="0.25" />
                   <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                 </svg>
               ) : isSuccess ? (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <svg width={mobile ? 16 : 13} height={mobile ? 16 : 13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
               ) : (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <svg width={mobile ? 16 : 13} height={mobile ? 16 : 13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="m15 4 5 5L7 22l-5-5Z" />
                   <path d="m14 5 5 5" />
                   <path d="M6 4V2M5 3H3M19 19v3M17.5 20.5h3" />
@@ -1860,35 +1912,7 @@ export function AppShell() {
             </button>
           );
         })()}
-        <button
-          type="button"
-          onClick={() => toggleTopPanel("agents", mobile)}
-          disabled={!activeSessionFamily}
-          title={agentsButtonLabel}
-          aria-label={agentsButtonLabel}
-          aria-pressed={activeTopPanel === "agents"}
-          style={{
-            position: "relative",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-            width: mobile ? TOP_BAR_ICON_BUTTON_SIZE : undefined,
-            height: "100%", padding: mobile ? 0 : "0 12px",
-            background: activeTopPanel === "agents" ? "var(--bg-selected)" : "none",
-            border: "none",
-            borderTop: activeTopPanel === "agents" ? "2px solid var(--accent)" : "2px solid transparent",
-            borderRight: "1px solid var(--border)",
-            color: activeTopPanel === "agents" ? "var(--text)" : activeSessionFamily ? "var(--text-muted)" : "var(--text-dim)",
-            cursor: activeSessionFamily ? "pointer" : "not-allowed", opacity: activeSessionFamily ? 1 : 0.45,
-            flexShrink: 0, fontSize: 11, whiteSpace: "nowrap",
-            transition: "color 0.1s, background 0.1s",
-          }}
-          data-mobile-toolbar-action={mobile ? "agents" : undefined}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <rect x="5" y="7" width="14" height="11" rx="2" /><path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
-          </svg>
-          {!mobile && <span>{translate("agentSwitcher.title")}</span>}
-          {agentsBadge && agentsBadge.count > 0 && renderAgentsBadge(agentsBadge, mobile)}
-        </button>
+        {!(mobile && isNarrowMobile) && renderAgentsButton(mobile)}
         {sessionHasBranches && (mobile ? (
           <button
             type="button"
@@ -1908,7 +1932,7 @@ export function AppShell() {
             }}
             data-mobile-toolbar-action="branches"
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: branchTree.length > 0 ? "var(--accent)" : "var(--text-dim)" }} aria-hidden="true">
+            <svg width={mobile ? 16 : 12} height={mobile ? 16 : 12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: branchTree.length > 0 ? "var(--accent)" : "var(--text-dim)" }} aria-hidden="true">
               <line x1="6" y1="3" x2="6" y2="15" />
               <circle cx="18" cy="6" r="3" />
               <circle cx="6" cy="18" r="3" />
@@ -1958,7 +1982,7 @@ export function AppShell() {
           }}
           data-mobile-toolbar-action={mobile ? "system" : undefined}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: systemPrompt ? "var(--accent)" : "var(--text-dim)", flexShrink: 0 }} aria-hidden="true">
+          <svg width={mobile ? 16 : 12} height={mobile ? 16 : 12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: systemPrompt ? "var(--accent)" : "var(--text-dim)", flexShrink: 0 }} aria-hidden="true">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
             <polyline points="14 2 14 8 20 8" />
             <line x1="8" y1="13" x2="16" y2="13" />
@@ -1995,7 +2019,7 @@ export function AppShell() {
           }}
           data-mobile-toolbar-action={mobile ? "tools" : undefined}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: systemTools?.some((tool) => tool.active) ? "var(--accent)" : "var(--text-dim)", flexShrink: 0 }} aria-hidden="true">
+          <svg width={mobile ? 16 : 12} height={mobile ? 16 : 12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: systemTools?.some((tool) => tool.active) ? "var(--accent)" : "var(--text-dim)", flexShrink: 0 }} aria-hidden="true">
             <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9z" />
           </svg>
           {!mobile && <span>{translate("tools.label")}</span>}
@@ -2196,7 +2220,7 @@ export function AppShell() {
         }}
         data-mobile-toolbar-action={mobile ? "debug" : undefined}
       >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: open ? "var(--accent)" : "var(--text-dim)", flexShrink: 0 }} aria-hidden="true">
+        <svg width={mobile ? 16 : 13} height={mobile ? 16 : 13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: open ? "var(--accent)" : "var(--text-dim)", flexShrink: 0 }} aria-hidden="true">
           <path d="M8 2l1.9 1.9M16 2l-1.9 1.9M9 7.1v-1a3 3 0 0 1 6 0v1" />
           <path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6zM12 20v-9" />
           <path d="M6.5 9C4.6 8.8 3 7.1 3 5M6 13H2M3 21c0-2.1 1.7-3.9 3.8-4M21 5c0 2.1-1.6 3.8-3.5 4M22 13h-4M17.2 17c2.1.1 3.8 1.9 3.8 4" />
@@ -2386,7 +2410,7 @@ export function AppShell() {
       <div inert={rightPanelFullWidth} style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
         {/* Top bar with sidebar toggle */}
         <div ref={topBarRef} style={{ flexShrink: 0, background: "var(--bg-panel)" }}>
-        <div style={{ display: "flex", alignItems: "center", position: "relative", borderBottom: "1px solid var(--border)", height: "calc(36px + env(safe-area-inset-top))", paddingTop: "env(safe-area-inset-top)" }}>
+        <div style={{ display: "flex", alignItems: "center", position: "relative", borderBottom: "1px solid var(--border)", height: "calc(var(--top-bar-height) + env(safe-area-inset-top))", paddingTop: "env(safe-area-inset-top)" }}>
           <button
             onClick={handleSidebarToggle}
              title={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
@@ -2423,6 +2447,7 @@ export function AppShell() {
                 height: "100%",
               }}
             >
+              {isNarrowMobile && renderAgentsButton(true)}
               {isNarrowMobile && (
                 <button
                   type="button"
@@ -2452,7 +2477,6 @@ export function AppShell() {
                       <circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="19" cy="12" r="1.5" />
                     </svg>
                   )}
-                  {foldedMoreAgentsBadge && renderAgentsBadge(foldedMoreAgentsBadge, true)}
                 </button>
               )}
               {!isNarrowMobile && renderChatToolbarActions(true)}
@@ -2470,7 +2494,8 @@ export function AppShell() {
                     top: 0,
                     right: 0,
                     bottom: 0,
-                    left: TOP_BAR_ICON_BUTTON_SIZE,
+                    // Right of the Agents and More buttons, which stay in place.
+                    left: `calc(2 * ${TOP_BAR_ICON_BUTTON_SIZE})`,
                     zIndex: 20,
                     display: "flex",
                     alignItems: "stretch",
@@ -2534,6 +2559,7 @@ export function AppShell() {
                   openSubagentTabIds={openSubagentTabIds}
                   onToggleSubagentTab={handleToggleSubagentTab}
                   onNewSideChat={() => handleNewSideChat(activeSessionFamily.root.id)}
+                  onDeleteSideChat={(sessionId) => handleDeleteSideChat(sessionId, activeSessionFamily.root)}
                 />
               )}
               {activeTopPanel === "system" && (
@@ -2883,7 +2909,7 @@ export function AppShell() {
           display: "flex",
           alignItems: "center",
           flexShrink: 0,
-          height: "calc(36px + env(safe-area-inset-top))",
+          height: "calc(var(--top-bar-height) + env(safe-area-inset-top))",
           paddingTop: "env(safe-area-inset-top)",
           background: "var(--bg-panel)",
           borderBottom: "1px solid var(--border)",
@@ -3024,6 +3050,7 @@ export function AppShell() {
         cwd={projectTrustCwd}
         sessionId={selectedSession?.id ?? null}
         initialSection={settingsSection}
+        openAtHome={settingsOpenAtHome}
         quoteSelectionEnabled={quoteSelectionEnabled}
         onQuoteSelectionChange={handleQuoteSelectionChange}
         onClose={() => {

@@ -3,8 +3,8 @@
 import { FolderIcon } from "./FileIcons";
 
 /** A disclosure row, not a filesystem listing: its children are changed files. */
-export function ChangedFilesFolder({ name, path, depth, expanded, onToggle, height = 24 }: {
-  name: string; path: string; depth: number; expanded: boolean; onToggle: () => void; height?: number;
+export function ChangedFilesFolder({ name, path, depth, expanded, onToggle, height = "var(--file-row-height)" }: {
+  name: string; path: string; depth: number; expanded: boolean; onToggle: () => void; height?: number | string;
 }) {
   return (
     <button type="button" aria-expanded={expanded} title={path} onClick={onToggle}

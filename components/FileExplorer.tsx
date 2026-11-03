@@ -375,7 +375,7 @@ export function TreeNode({
           gap: 4,
           paddingLeft: 8 + depth * 14,
           paddingRight: 8,
-          height: 24,
+          height: "var(--file-row-height)",
           cursor: "pointer",
           background: isDropTarget
             ? "color-mix(in srgb, var(--accent) 16%, transparent)"
@@ -475,7 +475,7 @@ export function TreeNode({
               justifyContent: "center",
               gap: 4,
               padding: "0 8px",
-              height: 20,
+              height: "calc(var(--file-row-height) - 4px)",
               background: "var(--bg-panel)",
               border: "1px solid var(--border)",
               borderRadius: 4,
@@ -506,7 +506,7 @@ export function TreeNode({
               justifyContent: "center",
               gap: 4,
               padding: "0 5px",
-              height: 20,
+              height: "calc(var(--file-row-height) - 4px)",
               background: "var(--bg-panel)",
               border: "1px solid var(--border)",
               borderRadius: 4,
@@ -551,7 +551,7 @@ export function TreeNode({
             disabled={allowingLink}
             title={t("files.allowOutsideLinkTitle", { target: pendingLinkTarget })}
             style={{
-              height: 20,
+              height: "calc(var(--file-row-height) - 4px)",
               padding: "0 8px",
               background: "var(--bg-panel)",
               border: "1px solid var(--border)",
@@ -645,7 +645,7 @@ function ChangeRow({
       <button type="button" onClick={() => onOpenFile(status.filePath, name, { modeHint: "diff" })} title={status.filePath}
         style={{
           display: "flex", alignItems: "center", gap: 6, width: "100%",
-          paddingLeft: depth === undefined ? 10 : 22 + depth * 14, paddingRight: 8, height: 24,
+          paddingLeft: depth === undefined ? 10 : 22 + depth * 14, paddingRight: 8, height: "var(--file-row-height)",
           border: 0, cursor: "pointer", background: hovered ? "var(--bg-hover)" : "transparent",
           borderRadius: 4, color: "var(--text)", textAlign: "left", userSelect: "none",
         }}>
@@ -686,7 +686,7 @@ function ChangeRow({
             justifyContent: "center",
             gap: 4,
             padding: "0 8px",
-            height: 20,
+            height: "calc(var(--file-row-height) - 4px)",
             background: "var(--bg-panel)",
             border: "1px solid var(--border)",
             borderRadius: 4,

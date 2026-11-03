@@ -37,7 +37,7 @@ test("side chats and Git Graph have distinct tabs when open together", () => {
   assert.match(html, /<circle cx="6" cy="6" r="3"/);
 });
 
-test("overflowing tabs keep the whole 36px bar: the strip has no scrollbar", () => {
+test("overflowing tabs keep the whole bar: the strip has no scrollbar", () => {
   // The app's 10px (6px on touch) scrollbar took its height out of the 36px
   // bar: 36px tabs were clipped (#1225), stretched ones squeezed to 26px.
   const html = renderTabBar(12);
@@ -46,7 +46,8 @@ test("overflowing tabs keep the whole 36px bar: the strip has no scrollbar", () 
   assert.match(css, /\.tabbar-scroll \{\s*scrollbar-width: none;\s*\}/);
   assert.match(css, /\.tabbar-scroll::-webkit-scrollbar \{\s*display: none;\s*\}/);
   const [list] = styles(html, "tablist");
-  assert.equal(list.height, "36px");
+  // The bar's height (36px, 44px on a phone or touch screen).
+  assert.equal(list.height, "var(--top-bar-height)");
   assert.equal(list["overflow-x"], "auto");
   assert.equal(list["overflow-y"], "hidden");
   assert.equal(list["align-items"], "stretch");

@@ -93,6 +93,10 @@ export async function checkChangedFilesTree({ browser, base, artifacts, fixture 
       await sidebar.getByText("new.txt", { exact: true }).waitFor();
       await sidebar.getByText("removed.txt", { exact: true }).waitFor();
       await sidebar.getByText("new-name.txt", { exact: true }).waitFor();
+      const sideFile = sidebar.getByRole("button", { name: /changed\.txt/ });
+      const expectedRowHeight = mobile ? 36 : 24;
+      assert.equal(await sideSrc.evaluate((element) => element.getBoundingClientRect().height), expectedRowHeight, "changed folders follow the file tree's touch height");
+      assert.equal(await sideFile.evaluate((element) => element.getBoundingClientRect().height), expectedRowHeight, "changed files follow the file tree's touch height");
       await button(sidebar, "List").click();
       await button(sidebar, "Tree").click();
       assert.equal(await sideDeep.getAttribute("aria-expanded"), "true", "switching views keeps this folder open");
@@ -102,7 +106,6 @@ export async function checkChangedFilesTree({ browser, base, artifacts, fixture 
         assert.equal(await sideDeep.getAttribute("aria-expanded"), "false");
         await page.keyboard.press("Enter");
         assert.equal(await sideDeep.getAttribute("aria-expanded"), "true");
-        const sideFile = sidebar.getByRole("button", { name: /changed\.txt/ });
         await sideFile.focus();
         await sidebar.getByRole("button", { name: "Insert path into chat", exact: true }).click();
         assert.match(await page.locator("textarea.chat-input-textarea").inputValue(), /@src\/deep\/changed\.txt/);
@@ -134,6 +137,7 @@ export async function checkChangedFilesTree({ browser, base, artifacts, fixture 
       await button(working, "Tree").click();
       await selected(working, "Tree");
       await selected(sidebar, "Tree");
+      assert.equal(await working.getByRole("button", { name: "src", exact: true }).evaluate((element) => element.getBoundingClientRect().height), 28, "Git Graph's virtual folder rows keep their fixed height");
       await working.getByRole("button", { name: "deep", exact: true }).click();
       const changed = working.getByRole("button", { name: /changed\.txt/ });
       await changed.click();

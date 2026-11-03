@@ -467,7 +467,7 @@ test("show more, empty groups, footer links and archive groups", () => {
   assert.match(rowMarkup(html, "footer-archived"), /<span class="session-tree-footer-label">Archived · 4<\/span><svg[^>]*class="session-tree-footer-chevron"/);
 });
 
-test("loading replaces the rows; the empty label shows only without session or group rows", () => {
+test("loading replaces the rows; the empty label shows only without session or header rows", () => {
   const loading = render({ loading: true, rows: [groupRow(), ...footer], emptyLabel: "No sessions found" });
   assert.match(loading, /<div class="session-tree-message">Loading...<\/div>/);
   assert.deepEqual(renderedKeys(loading), []);
@@ -478,6 +478,29 @@ test("loading replaces the rows; the empty label shows only without session or g
   assert.deepEqual(renderedKeys(empty), ["footer-open"]);
 
   assert.doesNotMatch(render({ rows: [groupRow(), ...footer], emptyLabel: "No sessions found" }), /No sessions found/);
+  for (const row of [
+    { kind: "unread-header", key: "unread-header", count: 0, collapsed: true, running: 0, awaiting: 0 },
+    { kind: "pinned-header", key: "pinned-header", count: 0, collapsed: true, running: 0, awaiting: 0 },
+    { kind: "section", key: "section:one", sectionId: "one", name: "One", count: 0, collapsed: true, running: 0, awaiting: 0, unread: 0 },
+  ]) {
+    assert.doesNotMatch(render({ rows: [row], emptyLabel: "No sessions found" }), /No sessions found/, row.kind);
+  }
+
+  const foldedArchive = render({
+    rows: [
+      { kind: "archive-group", key: "archive:/work/app", project, count: 2, expanded: false },
+      {
+        kind: "archive-group",
+        key: "archive:/work/old",
+        project: { ...project, key: "/work/old", root: "/work/old", name: "old" },
+        count: 5,
+        expanded: false,
+      },
+    ],
+    emptyLabel: "No archived sessions",
+  });
+  assert.doesNotMatch(foldedArchive, /No archived sessions/);
+  assert.deepEqual(renderedKeys(foldedArchive), ["archive:/work/app", "archive:/work/old"]);
   assert.doesNotMatch(render({ rows: footer, emptyLabel: null }), /session-tree-message/);
 
   const failed = render({ rows: footer, emptyLabel: "No sessions found", error: "HTTP 500" });
@@ -575,7 +598,7 @@ test("a row's controls fit its height with room to spare: 28px rows on a desktop
   // confirmation's buttons; a group header's + and ⋯ (its rename field is
   // the session row's). At least 2px clear above and below.
   const desktop = SIDEBAR_ROW_HEIGHTS.desktop;
-  for (const selector of [".session-tree-action", ".session-tree-rename", ".session-tree .session-tree-confirm-delete"]) {
+  for (const selector of [".session-tree-action", ".session-tree-rename", ".session-tree-confirm-delete"]) {
     assert.ok(heightOf(selector) + 4 <= desktop.session, selector);
   }
   assert.ok(heightOf(".session-tree .session-tree-group-action") + 4 <= desktop.group);
