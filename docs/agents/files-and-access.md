@@ -37,6 +37,7 @@
 
 ## Sandboxed HTML preview
 - HTML files preview in a `srcDoc` iframe with `sandbox="allow-scripts"` and **never** `allow-same-origin`: page scripts must not gain access to Pi Web's origin. `injectSandboxedHtmlPolyfill()` inserts a storage shim before the page's first script without changing the source view or the file; the same path handles the whole-file download for truncated HTML previews. It keeps the doctype first and injects into a real opening `<head>` when one is present.
+- The HTML Preview toolbar's Refresh button remounts the iframe with the displayed HTML, rerunning its scripts without reloading Pi Web or changing the file. File watching remains responsible for loading changed source; refresh also works when the source is unchanged. The button is absent from Source, Diff and non-HTML previews. It resets the page's temporary state, including the in-memory storage shim.
 - An opaque-origin iframe's `localStorage` and `sessionStorage` getters throw `SecurityError`. The shim replaces each unavailable store with a separate in-memory store (methods and named properties), leaving usable native storage untouched. It is not a native `Storage` instance, does not emit `storage` events, is not persistent and does not synchronize across documents: reloading or remounting a preview starts empty, including after switching to Source and back. Do not grant the iframe the host's origin or storage to make it persistent.
 
 ## Source view languages
