@@ -24,7 +24,7 @@ interface Props {
   turnsBefore: number;
 }
 
-const MINIMAP_WIDTH = 52;
+const MINIMAP_WIDTH = 92;
 const MAX_NODE_GAP = 20;
 const MINIMAP_PADDING = 12;
 // The lock button sits at the bottom of the rail (6px inset + 30px): nodes stop
@@ -220,27 +220,22 @@ interface NodeLayout {
   fillsHeight: boolean;
 }
 
-function layoutNodes(allNodes: NodeInfo[], minimapHeight: number): NodeLayout {
+export function layoutNodes(allNodes: NodeInfo[], minimapHeight: number): NodeLayout {
   if (allNodes.length === 0) {
     return { nodes: [], gap: MAX_NODE_GAP, fillsHeight: false };
   }
 
   const height = Math.max(1, minimapHeight);
-  const usableHeight = Math.max(0, height - MINIMAP_PADDING - MINIMAP_BOTTOM_PADDING);
-  if (allNodes.length === 1) {
-    return {
-      nodes: [{ ...allNodes[0], topRatio: MINIMAP_PADDING / height }],
-      gap: MAX_NODE_GAP,
-      fillsHeight: false,
-    };
-  }
-
-  const naturalGap = usableHeight / (allNodes.length - 1);
+  // Keep the group centered in the full rail while reserving equal space at
+  // both ends for the lock button and the earlier-history marker.
+  const usableHeight = Math.max(0, height - 2 * MINIMAP_BOTTOM_PADDING);
+  const naturalGap = allNodes.length > 1 ? usableHeight / (allNodes.length - 1) : Infinity;
   const gap = Math.min(MAX_NODE_GAP, naturalGap);
+  const firstTop = (height - gap * (allNodes.length - 1)) / 2;
   return {
     nodes: allNodes.map((node, index) => ({
       ...node,
-      topRatio: (MINIMAP_PADDING + index * gap) / height,
+      topRatio: (firstTop + index * gap) / height,
     })),
     gap,
     fillsHeight: naturalGap <= MAX_NODE_GAP,
@@ -653,8 +648,8 @@ export const ChatMinimap = memo(function ChatMinimap({
           data-minimap-earlier=""
           style={{
             position: "absolute",
-            left: "50%",
-            top: 0,
+            left: 22,
+            top: Math.max(0, (positionedNodes[0]?.topRatio ?? 0) * minimapHeight - MINIMAP_PADDING),
             height: MINIMAP_PADDING,
             width: 1,
             background: "repeating-linear-gradient(to bottom, var(--text-dim) 0 2px, transparent 2px 4px)",
@@ -683,15 +678,15 @@ export const ChatMinimap = memo(function ChatMinimap({
               display: "flex",
               alignItems: "center",
               justifyContent: "flex-start",
-              paddingLeft: 8,
+              paddingLeft: 22,
               pointerEvents: "none",
               zIndex: 2,
             }}
           >
             <div
               style={{
-                width: isActive ? 40 : isNearest ? 30 : Math.max(12, 40 - distance * 10),
-                height: 3,
+                width: isActive ? 52 : isNearest ? 40 : Math.max(12, 52 - distance * 12),
+                height: 4,
                 background: isActive ? "var(--text)" : "var(--border)",
                 transition: "width 0.1s, background 0.1s",
               }}

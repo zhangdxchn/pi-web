@@ -20,7 +20,21 @@ const jiti = createJiti(import.meta.url, {
   jsx: { runtime: "automatic" },
   tsconfigPaths: true,
 });
-const { AssistantOutline, countToolCalls } = await jiti.import("./ChatMinimap.tsx");
+const { AssistantOutline, countToolCalls, layoutNodes } = await jiti.import("./ChatMinimap.tsx");
+
+test("centers one or many turns in the rail and reserves room for the lock", () => {
+  const nodes = (count) => Array.from({ length: count }, (_, index) => ({ index, topRatio: 0 }));
+  assert.deepEqual(layoutNodes([], 600).nodes, []);
+  assert.equal(layoutNodes(nodes(1), 600).nodes[0].topRatio, 0.5);
+  for (const count of [2, 6, 100]) {
+    const { nodes: placed, gap } = layoutNodes(nodes(count), 600);
+    const first = placed[0].topRatio * 600;
+    const last = placed.at(-1).topRatio * 600;
+    assert.ok(Math.abs((first + last) / 2 - 300) < 1e-9);
+    assert.ok(first >= 48 && last <= 552);
+    assert.ok(gap <= 20);
+  }
+});
 
 test("renders math in headings without disabling heading navigation", () => {
   const html = renderToStaticMarkup(
