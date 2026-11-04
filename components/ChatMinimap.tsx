@@ -216,6 +216,11 @@ interface NodeLayout {
   fillsHeight: boolean;
 }
 
+export function minimapTickWidth(index: number, hoveredIndex: number | null): number {
+  if (hoveredIndex === null) return 8;
+  return Math.max(8, 30 - Math.abs(hoveredIndex - index) * 6);
+}
+
 export function layoutNodes(allNodes: NodeInfo[], minimapHeight: number): NodeLayout {
   if (allNodes.length === 0) {
     return { nodes: [], gap: MAX_NODE_GAP, fillsHeight: false };
@@ -626,9 +631,9 @@ export const ChatMinimap = memo(function ChatMinimap({
       }}
     >
       {positionedNodes.map((node) => {
-        const isNearest = minimapHovered && nearestNode?.index === node.index;
+        const hoveredIndex = minimapHovered ? nearestNode?.index ?? null : null;
+        const isNearest = hoveredIndex === node.index;
         const isActive = activeIndex === node.index;
-        const distance = activeIndex === null ? 3 : Math.abs(activeIndex - node.index);
 
         return (
           <div
@@ -652,9 +657,9 @@ export const ChatMinimap = memo(function ChatMinimap({
           >
             <div
               style={{
-                width: isActive ? 30 : isNearest ? 24 : Math.max(8, 30 - distance * 6),
+                width: minimapTickWidth(node.index, hoveredIndex),
                 height: 4,
-                background: isActive ? "var(--text)" : "var(--border)",
+                background: isNearest ? "var(--text)" : isActive && hoveredIndex === null ? "var(--text-dim)" : "var(--border)",
                 transition: "width 0.1s, background 0.1s",
               }}
             />
