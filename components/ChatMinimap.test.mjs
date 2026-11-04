@@ -38,6 +38,17 @@ test("renders math in headings without disabling heading navigation", () => {
   assert.doesNotMatch(html, /disabled=""/);
 });
 
+test("shows a paragraph excerpt alongside navigable headings", () => {
+  const html = renderToStaticMarkup(React.createElement(AssistantOutline, {
+    markdown: "## 结论\n\n这是回答摘要。\n\n后续段落。",
+    onHeadingClick() {},
+    onAnswerClick() {},
+  }));
+  assert.match(html, /结论/);
+  assert.match(html, /这是回答摘要/);
+  assert.doesNotMatch(html, /后续段落/);
+});
+
 test("counts tool calls per assistant reply, including replies that also answer", () => {
   // A reply can both answer and call tools, so counting text-less messages
   // would undercount this turn.
