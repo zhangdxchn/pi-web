@@ -20,7 +20,13 @@ const jiti = createJiti(import.meta.url, {
   jsx: { runtime: "automatic" },
   tsconfigPaths: true,
 });
-const { AssistantOutline, countToolCalls, layoutNodes } = await jiti.import("./ChatMinimap.tsx");
+const { AssistantOutline, countToolCalls, layoutNodes, minimapTickWidth } = await jiti.import("./ChatMinimap.tsx");
+
+test("ticks stay short until hover and expand around the hovered turn", () => {
+  assert.deepEqual([0, 1, 2, 3, 4].map((index) => minimapTickWidth(index, null)), [8, 8, 8, 8, 8]);
+  assert.deepEqual([0, 1, 2, 3, 4].map((index) => minimapTickWidth(index, 2)), [18, 24, 30, 24, 18]);
+  assert.equal(minimapTickWidth(20, 2), 8);
+});
 
 test("centers one or many turns in the rail with equal edge padding", () => {
   const nodes = (count) => Array.from({ length: count }, (_, index) => ({ index, topRatio: 0 }));
