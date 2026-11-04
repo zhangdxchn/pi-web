@@ -41,9 +41,9 @@ Coverage:
 - On a desktop the sidebar shows the files below the sessions; Settings ›
   General › File browser brings back the Sessions | Files tabs and returns,
   without remounting the file tree (its file search keeps its query).
-- Project Sections (`project-sections.mjs`, run separately): desktop creation, rename, ordering, menu moves, pointer drag, fold persistence and reload; mobile Chromium long-press drag, menu moves and deletion; pinned membership, cross-browser state, three languages and unchanged session files. With the unread section, it also checks precedence, folded summaries, keyboard focus and locating a retained read row into a folded Section on desktop and mobile. Native devices still need real-device verification.
+- Project Sections (`project-sections.mjs`, run separately): desktop creation, rename, ordering, menu moves, pointer drag, fold persistence and reload; mobile Chromium long-press drag, menu moves and deletion; pinned membership, cross-browser state, three languages and unchanged session files. Unread families stay in their project or the pinned section, and folded Sections summarize their projects' unread activity. Native devices still need real-device verification.
 - Unknown sessions and paths outside the fixture project are rejected.
-- The unread section (`session-unread.mjs`, desktop and mobile) takes pinned and project sessions without duplicates; a simulated background run's completion enters it. Reading syncs across tabs while the selected read row stays until a switch, reload, archive or explicit locate. Locate unfolds the pinned section or project and preserves keyboard focus; the tests also cover the zero count, archive Undo, a 180px sidebar and the saved fold.
+- Unread markers (`session-unread.mjs`, desktop and mobile) stay on the pinned or project row without duplicates. Folded headers summarize them. Reading syncs across tabs and keeps the row in place; the tests also cover manually marking a selected row unread, archive Undo and a simulated background completion.
 - Sidebar sessions open in browser tabs (`session-navigation.mjs`, desktop
   Chromium, one context so tabs share storage): a plain click and Enter
   select in place without a page load; Ctrl+click, middle-click and the row

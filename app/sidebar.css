@@ -230,6 +230,10 @@
   background: #d97706;
 }
 
+.session-tree-pinned-dot.is-unread {
+  background: #0891b2;
+}
+
 /* Session row: title, branch, time; actions take the time's place on
    hover. Hover and selection are a rounded box inset from the sidebar's
    edges, never a full-width band. The title starts in the text column,
@@ -423,12 +427,7 @@ a.session-tree-main {
   white-space: nowrap;
 }
 
-/* An unread row shows its project beside its activity status. */
-.session-tree-meta.has-project {
-  gap: 6px;
-}
-
-/* A pinned or unread row's project: meta, in the time's type. */
+/* A pinned row's project: meta, in the time's type. */
 .session-tree-project {
   display: inline-block;
   max-width: 70px;
@@ -506,32 +505,6 @@ a.session-tree-main {
 
 .session-tree-session.is-running:has(:focus-visible) .session-tree-meta {
   display: flex;
-}
-
-/* The retained row keeps its Read label and locate action in view. Its
-   project yields first on a narrow sidebar, before the session title. */
-.session-tree-session.is-retained .session-tree-title {
-  min-width: 52px;
-}
-
-.session-tree-session.is-retained .session-tree-meta {
-  display: flex;
-  flex: 0 1 auto;
-  min-width: 0;
-}
-
-.session-tree-session.is-retained .session-tree-project {
-  flex: 0 1000 auto;
-  min-width: 0;
-}
-
-.session-tree-read-status {
-  flex: none;
-}
-
-.session-tree-session.is-retained .session-tree-locate-action {
-  display: flex;
-  font-size: 16px;
 }
 
 .session-tree-rename {
@@ -835,7 +808,6 @@ a.session-tree-main {
   }
 
   .session-tree.is-mobile .session-tree-session:focus-within .session-tree-meta,
-  .session-tree-session.is-retained:focus-within .session-tree-meta,
   .session-tree-session.is-running:focus-within .session-tree-meta {
     display: flex;
   }
@@ -968,8 +940,7 @@ a.session-tree-main {
   font-size: 13px;
 }
 
-.session-tree.is-mobile .session-tree-more-action,
-.session-tree.is-mobile .session-tree-locate-action {
+.session-tree.is-mobile .session-tree-more-action {
   display: flex;
   width: 32px;
   height: 32px;

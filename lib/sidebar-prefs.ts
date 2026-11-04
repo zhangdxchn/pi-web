@@ -1,7 +1,7 @@
 /**
  * Per-browser sidebar preferences: the active tab (sessions or files), the
  * user's explicit project group expand/collapse choices, the archive view's
- * folded projects, whether the unread and pinned sections are collapsed, whether the files section below the sessions is
+ * folded projects, whether the pinned section is collapsed, whether the files section below the sessions is
  * collapsed, whether the files tab or section lists ignored files, and the
  * folders the worktree listing last found outside git.
  * Best-effort localStorage, like the other sidebar memories: privacy mode or
@@ -21,7 +21,6 @@ const GROUP_EXPANSION_STORAGE_KEY = "pi-web:sidebar-groups-v2";
 const LEGACY_GROUP_EXPANSION_STORAGE_KEY = "pi-web:sidebar-groups";
 const ARCHIVE_COLLAPSED_STORAGE_KEY = "pi-web:sidebar-archive-collapsed";
 const PINNED_COLLAPSED_STORAGE_KEY = "pi-web:sidebar-pins-collapsed";
-const UNREAD_COLLAPSED_STORAGE_KEY = "pi-web:sidebar-unread-collapsed";
 const SECTION_COLLAPSED_STORAGE_KEY = "pi-web:sidebar-project-sections-collapsed";
 const SHOW_IGNORED_FILES_STORAGE_KEY = "pi-web:sidebar-files-show-ignored";
 const FILES_COLLAPSED_STORAGE_KEY = "pi-web:sidebar-files-collapsed";
@@ -161,27 +160,6 @@ export function saveArchiveCollapsed(
   if (!storage) return;
   try {
     storage.setItem(ARCHIVE_COLLAPSED_STORAGE_KEY, JSON.stringify([...new Set(keys)].slice(-MAX_GROUP_EXPANSION_ENTRIES)));
-  } catch {
-    // Persistence is best-effort.
-  }
-}
-
-export function loadUnreadCollapsed(storage: StorageLike | null = getBrowserStorage()): boolean {
-  if (!storage) return false;
-  try {
-    return storage.getItem(UNREAD_COLLAPSED_STORAGE_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
-
-export function saveUnreadCollapsed(
-  collapsed: boolean,
-  storage: StorageLike | null = getBrowserStorage(),
-): void {
-  if (!storage) return;
-  try {
-    storage.setItem(UNREAD_COLLAPSED_STORAGE_KEY, String(collapsed));
   } catch {
     // Persistence is best-effort.
   }

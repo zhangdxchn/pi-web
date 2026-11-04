@@ -277,53 +277,41 @@ try {
     await combined.reload({ waitUntil: "domcontentloaded" });
     await showSessions();
     const sectionToggle = section(combined, personal).locator(".session-tree-pinned-toggle");
-    const unreadAlpha = combined.locator(`[data-row-key=${JSON.stringify(`session:unread:${alpha.id}`)}]`);
-    const unreadBeta = combined.locator(`[data-row-key=${JSON.stringify(`session:unread:${beta.id}`)}]`);
-    await unreadAlpha.waitFor({ state: "visible" });
-    await unreadBeta.waitFor({ state: "visible" });
+    const alphaRow = combined.locator(`[data-row-key=${JSON.stringify(`session:group:${alpha.id}`)}]`);
+    const betaRow = combined.locator(`[data-row-key=${JSON.stringify(`session:pinned:${beta.id}`)}]`);
+    await betaRow.locator(".session-tree-unread").waitFor({ state: "visible" });
     await sectionToggle.waitFor({ state: "visible" });
     assert.match(await sectionToggle.innerText(), /Personal\s*·\s*1/i);
     await sectionToggle.locator(".session-tree-summary-unread").waitFor({ state: "visible" });
-    assert.equal(await combined.locator(`[data-row-key=${JSON.stringify(`session:pinned:${beta.id}`)}]`).count(), 0);
-    assert.ok(await combined.locator('[data-row-key="unread-header"]').evaluate((el) => el.getBoundingClientRect().top) < await section(combined, personal).evaluate((el) => el.getBoundingClientRect().top));
-    if (!isMobile) {
-      await unreadAlpha.hover();
-      await unreadAlpha.getByRole("button", { name: "More actions" }).click();
-      await combined.getByRole("menuitem", { name: /^Mark as read/ }).click();
-      await unreadAlpha.waitFor({ state: "detached" });
-      await combined.waitForFunction((id) => document.activeElement?.closest(`[data-row-key="section:${id}"]`) !== null, personal);
-      await combined.evaluate((ids) => localStorage.setItem("pi-web:unread-session-ids", JSON.stringify(ids)), [alpha.id, beta.id]);
-      await combined.reload({ waitUntil: "domcontentloaded" });
-      await showSessions();
-    }
+    assert.equal(await combined.locator('[data-row-key="unread-header"]').count(), 0);
+    assert.equal(await group(combined, alpha.projectKey).count(), 0, "the Section is folded");
 
-    // Only-unread projects which are not current or pinned do not grow a new group.
-    await combined.goto(`${base}/?cwd=${encodeURIComponent(beta.cwd)}`, { waitUntil: "domcontentloaded" });
-    await showSessions();
-    await unreadAlpha.waitFor({ state: "visible" });
-    await sectionToggle.waitFor({ state: "visible" });
-    await combined.waitForFunction((id) => document.querySelector(`[data-row-key="section:${id}"] .session-tree-pinned-count`)?.textContent?.includes("0"), personal);
-    assert.equal(await group(combined, alpha.projectKey).count(), 0);
-
-    // Selecting retains the read row in Unread; locating opens its folded Section and group.
-    const link = unreadAlpha.locator(".session-tree-main");
+    // Expanding the Section exposes the unread row in its project, not a global section.
+    await sectionToggle.click();
+    const alphaGroup = group(combined, alpha.projectKey).locator(".session-tree-group-toggle");
+    await alphaGroup.waitFor({ state: "visible" });
+    if (await alphaGroup.getAttribute("aria-expanded") === "false") await alphaGroup.click();
+    await alphaRow.locator(".session-tree-unread").waitFor({ state: "visible" });
+    const link = alphaRow.locator(".session-tree-main");
     if (isMobile) await link.click();
     else { await link.focus(); await link.press("Enter"); }
     await showSessions();
-    await unreadAlpha.locator(".session-tree-read-status").waitFor({ state: "visible" });
-    assert.equal(await sectionToggle.getAttribute("aria-expanded"), "false");
-    const locate = unreadAlpha.getByRole("button", { name: / in project / });
-    if (isMobile) await locate.click();
-    else { await locate.focus(); await locate.press("Enter"); }
-    const home = combined.locator(`[data-row-key=${JSON.stringify(`session:group:${alpha.id}`)}]`);
-    await home.waitFor({ state: "visible" });
-    assert.equal(await sectionToggle.getAttribute("aria-expanded"), "true");
-    assert.equal(await group(combined, alpha.projectKey).locator(".session-tree-group-toggle").getAttribute("aria-expanded"), "true");
+    await alphaRow.locator(".session-tree-unread").waitFor({ state: "detached" });
+    await alphaRow.waitFor({ state: "visible" });
+    await betaRow.locator(".session-tree-unread").waitFor({ state: "visible" });
     if (!isMobile) await combined.waitForFunction((id) => document.activeElement?.closest(`[data-row-key="session:group:${id}"]`) !== null, alpha.id);
+
+    // An unread-only, non-current project remains present in its Section.
+    await combined.evaluate((ids) => localStorage.setItem("pi-web:unread-session-ids", JSON.stringify(ids)), [alpha.id, beta.id]);
+    await combined.goto(`${base}/?cwd=${encodeURIComponent(beta.cwd)}`, { waitUntil: "domcontentloaded" });
+    await showSessions();
+    await sectionToggle.waitFor({ state: "visible" });
+    assert.match(await sectionToggle.innerText(), /Personal\s*·\s*1/i);
+    await group(combined, alpha.projectKey).waitFor({ state: "visible" });
     await context.close();
   }
   assert.deepEqual(errors, []);
-  console.log("PASS combined: unread precedence, collapsed summaries and locating into a folded Section on desktop and mobile");
+  console.log("PASS combined: unread markers stay in projects and pins, with folded Section summaries on desktop and mobile");
   await desktop.close();
 } catch (error) {
   console.error(error);
