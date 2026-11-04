@@ -2417,7 +2417,8 @@ export function AppShell() {
         }
       }
     `}</style>
-    <div style={{
+    <div ref={sidebarResizer.panelRef} style={{
+      "--sidebar-width": `${sidebarResizer.width}px`,
       display: "flex",
       width: "100%",
       height: "var(--app-viewport-height, 100dvh)",
@@ -2425,7 +2426,7 @@ export function AppShell() {
       paddingRight: "env(safe-area-inset-right)",
       overflow: "hidden",
       background: "var(--bg)",
-    }}>
+    } as React.CSSProperties}>
       {/* Mobile overlay backdrop */}
       <div
         className={`sidebar-overlay-backdrop${mobileSidebarReady ? "" : " sidebar-mobile-pending"}`}
@@ -2443,12 +2444,9 @@ export function AppShell() {
 
       {/* Left sidebar */}
       <div
-        ref={sidebarResizer.panelRef}
         id="session-sidebar"
-        inert={rightPanelFullWidth}
-        className={`sidebar-container${sidebarOpen ? " sidebar-open" : " sidebar-closed"}${mobileSidebarReady ? "" : " sidebar-mobile-pending"}${sidebarResizer.isResizing ? " sidebar-resizing" : ""}`}
+        className={`sidebar-container${sidebarOpen ? " sidebar-open" : " sidebar-closed"}${mobileSidebarReady ? "" : " sidebar-mobile-pending"}${sidebarResizer.isResizing ? " sidebar-resizing" : ""}${rightPanelFullWidth ? " is-panel-expanded" : ""}`}
         style={{
-          "--sidebar-width": `${sidebarResizer.width}px`,
           background: "var(--bg-panel)",
           borderRight: "1px solid var(--border)",
           display: "flex",
@@ -2464,9 +2462,8 @@ export function AppShell() {
       {sidebarOpen && (
         <div
           {...sidebarResizer.separatorProps}
-          inert={rightPanelFullWidth}
           aria-controls="session-sidebar"
-          className={`panel-resize-handle sidebar-resize-handle${sidebarResizer.isResizing ? " is-resizing" : ""}`}
+          className={`panel-resize-handle sidebar-resize-handle${sidebarResizer.isResizing ? " is-resizing" : ""}${rightPanelFullWidth ? " is-panel-expanded" : ""}`}
           data-resize-handle="sidebar"
           title={`${translate("layout.resizeSidebar")}: ${translate("layout.resizeHint")}`}
         />
@@ -2943,7 +2940,7 @@ export function AppShell() {
 
       <div
         aria-hidden="true"
-        className={`right-panel-overlay-backdrop${rightPanelOpen ? " is-open" : ""}`}
+        className={`right-panel-overlay-backdrop${rightPanelOpen && !rightPanelFullWidth ? " is-open" : ""}`}
         onClick={() => setRightPanelOpen(false)}
       />
       {rightPanelOpen && (

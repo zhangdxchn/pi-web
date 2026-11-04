@@ -208,12 +208,13 @@ export async function checkGitGraphColumns({ browser, base, artifacts, fixture }
     await panel.getByRole("button", { name: "Expand file panel", exact: true }).click();
     await body.evaluate((element) => { element.scrollTop = 0; element.scrollLeft = 0; });
     // Expansion and horizontal-scroll clamping settle asynchronously. Measure
-    // the touch target only once the full-width panel and header agree.
+    // the touch target only once the panel, sidebar and header agree.
     await page.waitForFunction(() => {
-      const panel = document.querySelector("#file-panel");
+      const panel = document.querySelector("#file-panel").getBoundingClientRect();
+      const sidebar = document.querySelector("#session-sidebar").getBoundingClientRect();
       const body = document.querySelector('[data-testid="git-graph-body"]');
       const headerScroll = document.querySelector('[data-testid="git-graph-header"]').parentElement;
-      return Math.abs(panel.getBoundingClientRect().width - innerWidth) < 1 &&
+      return Math.abs(panel.left - sidebar.right) < 1 && Math.abs(panel.right - innerWidth) < 1 &&
         Math.abs(headerScroll.clientWidth - body.clientWidth) <= 1 &&
         headerScroll.scrollLeft === 0 && body.scrollLeft === 0;
     });

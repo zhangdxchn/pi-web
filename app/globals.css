@@ -2841,8 +2841,14 @@ span.token.table {
   }
 }
 
-/* Full-width mode keeps the mounted viewer and saved split width intact. */
+/* Expanded mode covers the chat, not the sidebar, and keeps the viewer mounted. */
 @media (min-width: 641px) {
+  .sidebar-container.is-panel-expanded {
+    transition: none;
+  }
+  .sidebar-resize-handle.is-panel-expanded {
+    z-index: 260;
+  }
   .right-panel-container.right-panel-open.right-panel-full-width {
     position: fixed;
     inset: 0 env(safe-area-inset-right) 0 env(safe-area-inset-left);
@@ -2854,6 +2860,9 @@ span.token.table {
     box-shadow: none;
     transform: none;
     transition: none;
+  }
+  .sidebar-container.sidebar-open ~ .right-panel-container.right-panel-open.right-panel-full-width {
+    left: calc(env(safe-area-inset-left) + var(--sidebar-width, 260px));
   }
   .right-panel-container.right-panel-full-width > * {
     width: 100%;

@@ -1,5 +1,19 @@
 import assert from "node:assert/strict";
+import { dirname, join } from "node:path";
 import { showSidebarFiles } from "./sidebar.mjs";
+
+async function assertExpandedBesideSidebar(page) {
+  const layout = await page.evaluate(() => {
+    const sidebar = document.querySelector("#session-sidebar");
+    const panel = document.querySelector("#file-panel");
+    const sidebarRect = sidebar.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    return { sidebarRight: sidebarRect.right, panelLeft: panelRect.left, panelRight: panelRect.right, sidebarInert: sidebar.inert };
+  });
+  assert.equal(layout.sidebarInert, false, "The sidebar remains interactive when the panel is expanded");
+  assert.ok(Math.abs(layout.panelLeft - layout.sidebarRight) < 1, `The expanded panel starts beside the sidebar: ${JSON.stringify(layout)}`);
+  assert.ok(Math.abs(layout.panelRight - page.viewportSize().width) < 1, "The expanded panel reaches the right edge");
+}
 
 export const filePanelFixture = `<!doctype html><html><head><script>
 localStorage.setItem("number", 42);
@@ -99,8 +113,8 @@ export async function checkFilePanel(page, filePath) {
       await toggle.click();
       assert.equal(await sessionPopover.count(), 0, "Full-width mode dismisses inert top-bar menus");
       assert.equal(await panel.getByRole("button", { name: "Restore file panel width", exact: true }).getAttribute("aria-pressed"), "true");
-      assert.equal(Math.round(await width()), page.viewportSize().width);
-      assert.equal(await page.locator("#session-sidebar").evaluate(el => el.inert), true);
+      await width();
+      await assertExpandedBesideSidebar(page);
       assert.equal(await frame.evaluate(() => window.previewInstance), instance);
       assert.equal(await frame.evaluate(() => scrollY), 120);
       assert.equal(await frame.locator("#notes").inputValue(), "Keep this note");
@@ -111,11 +125,46 @@ export async function checkFilePanel(page, filePath) {
       assert.equal(await page.locator("#session-sidebar").evaluate(el => el.inert), false);
     }
     await toggle.click();
+    // Drag from the panel side of the hit target and check the boundary before
+    // releasing: live resizing must not wait for React's committed width.
+    const sidebar = page.locator("#session-sidebar");
+    const sidebarHandle = page.locator('[data-resize-handle="sidebar"]');
+    const sidebarBox = await sidebar.boundingBox();
+    const startX = sidebarBox.x + sidebarBox.width + 3;
+    const startY = sidebarBox.y + sidebarBox.height / 2;
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX - 24, startY);
+    assert.ok((await sidebar.boundingBox()).width < sidebarBox.width - 20, "The entire sidebar resize target stays usable");
+    await assertExpandedBesideSidebar(page);
+    await page.mouse.move(startX, startY);
+    await page.mouse.up();
+    await assertExpandedBesideSidebar(page);
+    await sidebarHandle.press("ArrowLeft");
+    await assertExpandedBesideSidebar(page);
+    await sidebarHandle.press("ArrowRight");
+    await assertExpandedBesideSidebar(page);
+    // The round trip returned to the same widths; restore an absent preference too.
+    await page.evaluate(([sidebarWidth]) => {
+      if (sidebarWidth === null) localStorage.removeItem("pi-sidebar-width");
+      else localStorage.setItem("pi-sidebar-width", sidebarWidth);
+    }, originalStored);
     await panel.getByRole("button", { name: "Hide file panel", exact: true }).click();
     await page.getByRole("button", { name: "Show file panel", exact: true }).click();
     assert.equal(await toggle.getAttribute("aria-pressed"), "false", "Reopening returns to the split layout");
     assert.equal(await width(), originalWidth);
     assert.equal(await frame.evaluate(() => window.previewInstance), instance);
+
+    // An already closed sidebar stays closed; expansion still uses the whole viewport.
+    await panel.getByRole("button", { name: "Hide file panel", exact: true }).click();
+    await page.getByRole("button", { name: "Hide sidebar", exact: true }).click();
+    await page.getByRole("button", { name: "Show file panel", exact: true }).click();
+    await toggle.click();
+    assert.equal(Math.round(await width()), page.viewportSize().width);
+    await panel.getByRole("button", { name: "Restore file panel width", exact: true }).click();
+    await panel.getByRole("button", { name: "Hide file panel", exact: true }).click();
+    await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
+    await page.getByRole("button", { name: "Show file panel", exact: true }).click();
   }
   // Refresh runs the same sandboxed HTML again, not the surrounding app.
   await frame.evaluate(() => localStorage.setItem("ephemeral", "before refresh"));
@@ -128,6 +177,24 @@ export async function checkFilePanel(page, filePath) {
   assert.equal(await frame.evaluate(() => localStorage.getItem("ephemeral")), null);
   assert.equal(await iframe.getAttribute("sandbox"), "allow-scripts");
   assert.equal(await panel.getByRole("button", { name: "Preview", exact: true }).getAttribute("aria-pressed"), "true");
+  if (page.viewportSize().width > 959) {
+    // Compact desktops normally use a modal overlay. Expansion must remove its
+    // backdrop so a file can be opened from the still-visible sidebar.
+    const originalViewport = page.viewportSize();
+    await page.setViewportSize({ ...originalViewport, width: 800 });
+    await toggle.click();
+    await assertExpandedBesideSidebar(page);
+    const otherFile = join(dirname(filePath), "large-storage.html").replace(/\\/g, "/");
+    await page.locator("#session-sidebar").getByTitle(otherFile, { exact: true }).click();
+    await panel.frameLocator("iframe").getByText("Large HTML preview ready", { exact: true }).waitFor();
+    assert.equal(await panel.getByRole("button", { name: "Restore file panel width", exact: true }).getAttribute("aria-pressed"), "true");
+    await page.locator("#session-sidebar").getByTitle(filePath.replace(/\\/g, "/"), { exact: true }).click();
+    await panel.frameLocator("iframe").locator("#notes").waitFor();
+    await panel.getByRole("button", { name: "Close large-storage.html", exact: true }).click();
+    await panel.getByRole("tab", { name: "large-storage.html", exact: true }).waitFor({ state: "detached" });
+    await panel.getByRole("button", { name: "Restore file panel width", exact: true }).click();
+    await page.setViewportSize(originalViewport);
+  }
   await panel.getByRole("button", { name: "Hide file panel", exact: true }).click();
   console.log(`PASS: file panel width, preview state and refresh at ${page.viewportSize().width}px`);
 }
