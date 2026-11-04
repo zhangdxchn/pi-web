@@ -8,7 +8,6 @@ import {
   normalizeDisplayMath,
 } from "@/lib/markdown";
 import { isMessageGroupAnchor, splitFinalAssistantBlocks } from "@/lib/message-display";
-import { loadMinimapPreviewLocked, saveMinimapPreviewLocked } from "@/lib/minimap-preview-lock";
 import type { AgentMessage, AssistantMessage, CustomMessage, TextContent, UserMessage } from "@/lib/types";
 import { useI18n } from "@/hooks/useI18n";
 import styles from "./ChatMinimap.module.css";
@@ -26,10 +25,7 @@ interface Props {
 
 const MINIMAP_WIDTH = 92;
 const MAX_NODE_GAP = 20;
-const MINIMAP_PADDING = 12;
-// The lock button sits at the bottom of the rail (6px inset + 30px): nodes stop
-// above it so the last turn stays visible and clickable.
-const MINIMAP_BOTTOM_PADDING = 36 + MINIMAP_PADDING;
+const MINIMAP_EDGE_PADDING = 48;
 const PREVIEW_HIDE_DELAY = 250;
 const NAVIGATION_ACTIVE_LOCK_MS = 1600;
 
@@ -226,9 +222,8 @@ export function layoutNodes(allNodes: NodeInfo[], minimapHeight: number): NodeLa
   }
 
   const height = Math.max(1, minimapHeight);
-  // Keep the group centered in the full rail while reserving equal space at
-  // both ends for the lock button and the earlier-history marker.
-  const usableHeight = Math.max(0, height - 2 * MINIMAP_BOTTOM_PADDING);
+  // Keep equal breathing room at both ends while centering the tick group.
+  const usableHeight = Math.max(0, height - 2 * MINIMAP_EDGE_PADDING);
   const naturalGap = allNodes.length > 1 ? usableHeight / (allNodes.length - 1) : Infinity;
   const gap = Math.min(MAX_NODE_GAP, naturalGap);
   const firstTop = (height - gap * (allNodes.length - 1)) / 2;
@@ -256,7 +251,6 @@ export const ChatMinimap = memo(function ChatMinimap({
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [minimapHeight, setMinimapHeight] = useState(600);
   const [minimapHovered, setMinimapHovered] = useState(false);
-  const [locked, setLocked] = useState(loadMinimapPreviewLocked);
   const [mouseYRatio, setMouseYRatio] = useState<number | null>(null);
   const draggingRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -555,21 +549,9 @@ export const ChatMinimap = memo(function ChatMinimap({
   }, []);
 
   const showPreview = useCallback(() => {
-    if (locked) return;
     cancelPreviewHide();
     setMinimapHovered(true);
-  }, [cancelPreviewHide, locked]);
-
-  const toggleLock = useCallback(() => {
-    const next = !locked;
-    setLocked(next);
-    saveMinimapPreviewLocked(next);
-    if (next) {
-      cancelPreviewHide();
-      setMinimapHovered(false);
-      setMouseYRatio(null);
-    }
-  }, [cancelPreviewHide, locked]);
+  }, [cancelPreviewHide]);
 
   const schedulePreviewHide = useCallback(() => {
     cancelPreviewHide();
@@ -643,21 +625,6 @@ export const ChatMinimap = memo(function ChatMinimap({
         overflow: "visible",
       }}
     >
-      {turnsBefore > 0 && (
-        <div
-          data-minimap-earlier=""
-          style={{
-            position: "absolute",
-            left: 22,
-            top: Math.max(0, (positionedNodes[0]?.topRatio ?? 0) * minimapHeight - MINIMAP_PADDING),
-            height: MINIMAP_PADDING,
-            width: 1,
-            background: "repeating-linear-gradient(to bottom, var(--text-dim) 0 2px, transparent 2px 4px)",
-            transform: "translateX(-50%)",
-            zIndex: 0,
-          }}
-        />
-      )}
       {positionedNodes.map((node) => {
         const isNearest = minimapHovered && nearestNode?.index === node.index;
         const isActive = activeIndex === node.index;
@@ -694,39 +661,6 @@ export const ChatMinimap = memo(function ChatMinimap({
           </div>
         );
       })}
-
-      <button
-        type="button"
-        className={styles.lock}
-        data-minimap-lock={locked ? "on" : "off"}
-        aria-pressed={locked}
-        title={t(locked ? "chatMinimap.unlockPreview" : "chatMinimap.lockPreview")}
-        aria-label={t("chatMinimap.lockPreview")}
-        onMouseDown={(event) => event.stopPropagation()}
-        onClick={(event) => {
-          event.stopPropagation();
-          toggleLock();
-        }}
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <rect x="4" y="11" width="16" height="10" rx="2" />
-          {locked ? (
-            <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-          ) : (
-            <path d="M8 11V7a4 4 0 0 1 7.9-.9" />
-          )}
-        </svg>
-      </button>
 
       {minimapHovered && nearestNode && (
         <div

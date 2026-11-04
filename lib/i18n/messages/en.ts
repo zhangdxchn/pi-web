@@ -1037,8 +1037,6 @@ export const enLocale: LocalePlugin = {
     "chatMinimap.earlierTurns": "Earlier turns not loaded: {count}. Click to load",
     "chatMinimap.locateAssistant": "Locate assistant message",
     "chatMinimap.toolCalls": "Tool calls this turn: {count}",
-    "chatMinimap.lockPreview": "Lock: don't open the preview on hover",
-    "chatMinimap.unlockPreview": "Unlock the hover preview",
     "i18n.close": "Close",
     "i18n.copy": "Copy",
     "i18n.copied": "Copied",

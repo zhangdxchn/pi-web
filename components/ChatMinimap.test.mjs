@@ -22,7 +22,7 @@ const jiti = createJiti(import.meta.url, {
 });
 const { AssistantOutline, countToolCalls, layoutNodes } = await jiti.import("./ChatMinimap.tsx");
 
-test("centers one or many turns in the rail and reserves room for the lock", () => {
+test("centers one or many turns in the rail with equal edge padding", () => {
   const nodes = (count) => Array.from({ length: count }, (_, index) => ({ index, topRatio: 0 }));
   assert.deepEqual(layoutNodes([], 600).nodes, []);
   assert.equal(layoutNodes(nodes(1), 600).nodes[0].topRatio, 0.5);
