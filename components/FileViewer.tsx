@@ -28,6 +28,7 @@ import { parseFrontmatter } from "@/lib/frontmatter";
 import { isExternalMarkdownHref, jumpToMarkdownFragment, markdownAppUrlTransform, markdownPreviewRehypePlugins, markdownPreviewRemarkPlugins, markdownUrlTransform, normalizeDisplayMath } from "@/lib/markdown";
 import { CodeBlock, MermaidBlock } from "./MermaidBlock";
 import { DelimitedTable } from "./DelimitedTable";
+import { RefreshIcon } from "./SidebarIcons";
 import { isDelimitedTablePath } from "@/lib/delimited-table";
 import { FrontmatterCard } from "./FrontmatterCard";
 import { diffGapLabel, parseUnifiedPatch, unifiedDiffLines, type SplitDiffGap, type UnifiedDiffLine } from "@/lib/patch";
@@ -1241,6 +1242,7 @@ function TextFileViewer({
   const [selectedLineRange, setSelectedLineRange] = useState<SelectedLineRange | null>(null);
   // Whole file for an HTML preview whose source view is still chunked.
   const [htmlFull, setHtmlFull] = useState<{ text?: string; error?: string } | null>(null);
+  const [htmlPreviewRevision, setHtmlPreviewRevision] = useState(0);
 
   onStateChangeRef.current = onStateChange;
 
@@ -1800,6 +1802,17 @@ function TextFileViewer({
             )}
           </div>
 
+          {isHtml && effectiveDisplayMode === "preview" && (
+            <button
+              type="button"
+              onClick={() => setHtmlPreviewRevision((revision) => revision + 1)}
+              title={t("i18n.refresh")}
+              aria-label={t("i18n.refresh")}
+              className="file-viewer-icon-button"
+            >
+              <RefreshIcon size={14} />
+            </button>
+          )}
           {!isDeletedDiff && <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} />}
         </div>
       </div>
@@ -1852,6 +1865,7 @@ function TextFileViewer({
           </div>
         ) : isHtml && effectiveDisplayMode === "preview" ? (
           <iframe
+            key={htmlPreviewRevision}
             srcDoc={htmlPreview}
             sandbox="allow-scripts"
             style={{ width: "100%", height: "100%", border: "none", background: "var(--bg)" }}

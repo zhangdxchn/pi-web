@@ -61,6 +61,7 @@ export async function checkFilePanel(page, filePath) {
   }, "the preview's first script can use both isolated storage objects without accessing its parent");
   await frame.evaluate(() => localStorage.setItem("ephemeral", "preview only"));
   await panel.getByRole("button", { name: "Source", exact: true }).click();
+  assert.equal(await panel.getByRole("button", { name: "Refresh", exact: true }).count(), 0, "Source has no preview refresh");
   const source = await panel.locator(".file-viewer-content").innerText();
   assert.ok(source.includes('localStorage.setItem("number", 42)'));
   assert.ok(!source.includes("data-pi-web-polyfill"), "the source view must remain unchanged");
@@ -116,8 +117,19 @@ export async function checkFilePanel(page, filePath) {
     assert.equal(await width(), originalWidth);
     assert.equal(await frame.evaluate(() => window.previewInstance), instance);
   }
+  // Refresh runs the same sandboxed HTML again, not the surrounding app.
+  await frame.evaluate(() => localStorage.setItem("ephemeral", "before refresh"));
+  await panel.getByRole("button", { name: "Refresh", exact: true }).click();
+  await iframe.waitFor();
+  frame = await (await iframe.elementHandle()).contentFrame();
+  await frame.locator("#notes").waitFor();
+  assert.notEqual(await frame.evaluate(() => window.previewInstance), instance);
+  assert.equal(await frame.locator("#notes").inputValue(), "");
+  assert.equal(await frame.evaluate(() => localStorage.getItem("ephemeral")), null);
+  assert.equal(await iframe.getAttribute("sandbox"), "allow-scripts");
+  assert.equal(await panel.getByRole("button", { name: "Preview", exact: true }).getAttribute("aria-pressed"), "true");
   await panel.getByRole("button", { name: "Hide file panel", exact: true }).click();
-  console.log(`PASS: file panel width and preview state at ${page.viewportSize().width}px`);
+  console.log(`PASS: file panel width, preview state and refresh at ${page.viewportSize().width}px`);
 }
 
 export async function checkLargeHtmlStorage(page, filePath) {
@@ -138,6 +150,11 @@ export async function checkLargeHtmlStorage(page, filePath) {
   assert.deepEqual(JSON.parse(await frame.locator("html").getAttribute("data-large-storage")), {
     value: "ready", session: "separate", mode: "CSS1Compat",
   });
+  await frame.evaluate(() => localStorage.setItem("ephemeral", "before refresh"));
+  await panel.getByRole("button", { name: "Refresh", exact: true }).click();
+  const refreshed = await (await iframe.elementHandle()).contentFrame();
+  await refreshed.getByText("Large HTML preview ready", { exact: true }).waitFor();
+  assert.equal(await refreshed.evaluate(() => localStorage.getItem("ephemeral")), null);
   await panel.getByRole("button", { name: "Hide file panel", exact: true }).click();
   console.log(`PASS: full-file sandboxed HTML storage preview at ${page.viewportSize().width}px`);
 }
