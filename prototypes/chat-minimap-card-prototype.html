@@ -1,0 +1,1208 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pi Web · 会话导航：图一悬浮卡片 vs 图二抽屉列表 原型对比</title>
+  <!--
+    设计依据与假设：
+    1. 图一方案（目标）：微交互悬浮卡片（Hover / Scrub Popover Card）。
+       - 鼠标或手指滑动右侧导航轨时，仅在光标当前 Y 轴高度向左弹出单轮卡片。
+       - 内容包含：轮次编号、用户提问（加粗）、助手核心结论/表格 Markdown 摘要、工具调用数量。
+       - 导轨提供 ☰ 视口当前轮次指示器，底部提供 ⌄ 快速回到底部圆形按钮。
+       - 零横向空间浪费，不遮挡大面积正文，移出即隐，点击直达。
+    2. 图二方案（现状基准）：当前 Pi Web 的 320px 全高大纲抽屉。
+       - 鼠标划过即展开占据 320px 宽的垂直列表，包含全部轮次，需二次滚动寻找。
+    3. 本原型支持动态交互：悬停滑动、拖拽刻度、点击跳转正文、深浅色切换、移动端视口模拟、三种方案模式切换。
+  -->
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #1a1a1a;
+      --panel: #242424;
+      --hover: #2e2e2e;
+      --selected: #383838;
+      --border: #454545;
+      --text: #e8e8e8;
+      --muted: #b7b7b7;
+      --dim: #a4a4a4;
+      --accent: #a4c2f4;
+      --accent-hover: #c3d8fa;
+      --user: #292929;
+      --tool-bg: #222222;
+      --canvas: #121212;
+      --card-shadow: 0 12px 36px rgba(0,0,0,0.36), 0 2px 8px rgba(0,0,0,0.2);
+    }
+    html[data-theme="light"] {
+      color-scheme: light;
+      --bg: #ffffff;
+      --panel: #f5f5f5;
+      --hover: #eeeeee;
+      --selected: #e8e8e8;
+      --border: #e0e0e0;
+      --text: #1a1a1a;
+      --muted: #515c6b;
+      --dim: #5e6673;
+      --accent: #245bce;
+      --accent-hover: #1d4ed8;
+      --user: #eff6ff;
+      --tool-bg: #f9fafb;
+      --canvas: #f0f2f5;
+      --card-shadow: 0 10px 30px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.06);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--text);
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      min-width: 320px;
+    }
+    button, input { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    /* 外层容器与控制台 */
+    .page {
+      max-width: 1360px;
+      margin: 0 auto;
+      padding: 24px 20px 48px;
+    }
+    .header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    .eyebrow {
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--dim);
+      font-weight: 700;
+    }
+    h1 {
+      margin: 4px 0 2px;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .desc {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    /* 调参工具栏 */
+    .tweaks-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      background: var(--panel);
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+    .tweak-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .tweak-label {
+      font-size: 11px;
+      color: var(--dim);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-right: 2px;
+    }
+    .btn-tweak {
+      padding: 5px 11px;
+      font-size: 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--muted);
+      transition: all 120ms ease;
+    }
+    .btn-tweak:hover {
+      background: var(--hover);
+      color: var(--text);
+    }
+    .btn-tweak.active {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #fff;
+      font-weight: 600;
+    }
+    html[data-theme="dark"] .btn-tweak.active {
+      color: #121824;
+    }
+    .divider {
+      width: 1px;
+      height: 20px;
+      background: var(--border);
+      margin: 0 4px;
+    }
+
+    /* 视口模拟器外框 */
+    .viewport-frame {
+      display: flex;
+      justify-content: center;
+      transition: all 240ms ease;
+    }
+    .viewport-mock {
+      position: relative;
+      width: 100%;
+      height: 720px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--bg);
+      display: flex;
+      overflow: hidden;
+      box-shadow: 0 16px 40px rgba(0,0,0,0.18);
+      transition: width 240ms cubic-bezier(0.2, 0, 0, 1);
+    }
+    .viewport-mock.mobile-mode {
+      width: 412px;
+      height: 700px;
+    }
+
+    /* 聊天区结构 */
+    .chat-layout {
+      position: relative;
+      flex: 1;
+      display: flex;
+      min-width: 0;
+      height: 100%;
+      background: var(--bg);
+    }
+    .chat-content-container {
+      flex: 1;
+      height: 100%;
+      overflow-y: auto;
+      scroll-behavior: smooth;
+      position: relative;
+      padding: 24px 24px 80px;
+    }
+    .chat-inner-stream {
+      max-width: 760px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+
+    /* 消息气泡 */
+    .turn-block {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding-top: 12px;
+      scroll-margin-top: 20px;
+      transition: background 300ms ease;
+    }
+    .turn-block.highlight {
+      animation: flash-highlight 1200ms ease;
+    }
+    @keyframes flash-highlight {
+      0% { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+      100% { background: transparent; }
+    }
+
+    .user-msg-row {
+      display: flex;
+      justify-content: flex-end;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .user-bubble {
+      max-width: 82%;
+      background: var(--user);
+      border: 1px solid var(--border);
+      border-radius: 12px 12px 2px 12px;
+      padding: 10px 14px;
+      font-size: 13.5px;
+      line-height: 1.5;
+      color: var(--text);
+    }
+    .user-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--selected);
+      display: grid;
+      place-items: center;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      flex: none;
+    }
+
+    .assistant-msg-row {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .assistant-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-size: 12px;
+      font-weight: 700;
+      flex: none;
+    }
+    html[data-theme="dark"] .assistant-avatar { color: #121824; }
+    .assistant-body {
+      flex: 1;
+      min-width: 0;
+      font-size: 13.5px;
+      line-height: 1.6;
+      color: var(--text);
+    }
+    .assistant-body h2 {
+      font-size: 15px;
+      margin: 6px 0 10px;
+      font-weight: 600;
+    }
+    .assistant-body p {
+      margin: 0 0 10px;
+    }
+    .code-snippet {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      padding: 6px 10px;
+      border-radius: 6px;
+      margin: 8px 0;
+    }
+    .mini-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      margin: 8px 0;
+      border: 1px solid var(--border);
+    }
+    .mini-table th, .mini-table td {
+      border: 1px solid var(--border);
+      padding: 5px 9px;
+      text-align: left;
+    }
+    .mini-table th {
+      background: var(--panel);
+      color: var(--muted);
+    }
+
+    /* 右侧滚动导轨 (Minimap Rail) */
+    .minimap-rail-wrap {
+      width: 32px;
+      flex: none;
+      height: 100%;
+      position: relative;
+      border-left: 1px solid var(--border);
+      background: var(--panel);
+      user-select: none;
+      touch-action: none;
+      cursor: pointer;
+    }
+    .rail-track-line {
+      position: absolute;
+      top: 14px;
+      bottom: 50px;
+      left: 50%;
+      width: 2px;
+      background: color-mix(in srgb, var(--border) 80%, transparent);
+      transform: translateX(-50%);
+      border-radius: 2px;
+    }
+    .rail-node-dot {
+      position: absolute;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+      background: color-mix(in srgb, var(--dim) 35%, transparent);
+      border: 1.5px solid var(--border);
+      transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+      z-index: 2;
+    }
+    .rail-node-dot.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--bg);
+      transform: translate(-50%, -50%) scale(1.2);
+    }
+    .rail-node-dot:hover {
+      transform: translate(-50%, -50%) scale(1.35);
+      border-color: var(--accent);
+    }
+
+    /* 方案 B: 导轨上的 ☰ 滑块指示器 */
+    .rail-scrub-handle {
+      position: absolute;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 24px;
+      height: 24px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      display: grid;
+      place-items: center;
+      color: var(--text-muted);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+      z-index: 10;
+      transition: top 60ms linear, transform 120ms ease, color 120ms ease;
+      cursor: grab;
+    }
+    .rail-scrub-handle:hover, .rail-scrub-handle.dragging {
+      color: var(--text);
+      border-color: var(--accent);
+      transform: translate(-50%, -50%) scale(1.1);
+    }
+    .rail-scrub-handle svg {
+      width: 14px;
+      height: 14px;
+      stroke-width: 2;
+      stroke: currentColor;
+    }
+
+    /* 快速回到底部圆形按钮 ⌄ */
+    .btn-scroll-bottom {
+      position: absolute;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      display: grid;
+      place-items: center;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+      transition: all 120ms ease;
+      z-index: 5;
+    }
+    .btn-scroll-bottom:hover {
+      color: var(--text);
+      border-color: var(--accent);
+      background: var(--hover);
+    }
+    .btn-scroll-bottom svg {
+      width: 13px;
+      height: 13px;
+      stroke: currentColor;
+      stroke-width: 2.2;
+    }
+
+    /* ========================================================
+       方案 A & B: 图一单轮悬浮预览卡片 (Floating Popover Card)
+       ======================================================== */
+    .floating-preview-card {
+      position: absolute;
+      right: 42px; /* 紧贴右侧导轨 */
+      width: 320px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 15px;
+      box-shadow: var(--card-shadow);
+      z-index: 100;
+      pointer-events: auto;
+      cursor: pointer;
+      transform: translateY(-50%);
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 140ms ease, transform 140ms ease, visibility 140ms;
+    }
+    .floating-preview-card.visible {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(-50%) translateX(0);
+    }
+    /* 卡片右侧指示小三角指向当前导轨刻度 */
+    .floating-preview-card::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      right: -6px;
+      transform: translateY(-50%) rotate(45deg);
+      width: 10px;
+      height: 10px;
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+    }
+
+    .card-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 7px;
+    }
+    .card-turn-pill {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--dim);
+      background: var(--panel);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+    .card-tool-badge {
+      font-size: 10px;
+      color: var(--muted);
+      background: var(--tool-bg);
+      border: 1px solid var(--border);
+      padding: 1px 6px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .card-tool-badge svg {
+      width: 10px;
+      height: 10px;
+      stroke: currentColor;
+    }
+
+    .card-title {
+      font-size: 13.5px;
+      font-weight: 650;
+      color: var(--text);
+      line-height: 1.38;
+      margin-bottom: 8px;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      overflow: hidden;
+    }
+
+    .card-snippet {
+      font-size: 12px;
+      line-height: 1.48;
+      color: var(--muted);
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
+      overflow: hidden;
+      border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+      padding-top: 7px;
+      position: relative;
+    }
+    .card-snippet strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .card-hint {
+      margin-top: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 10.5px;
+      color: var(--dim);
+    }
+    .card-hint-key {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      color: var(--accent);
+    }
+
+    /* ========================================================
+       方案 C: 图二现状 320px 全高抽屉列表 (Current Drawer)
+       ======================================================== */
+    .drawer-preview-list {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      right: 32px;
+      width: 320px;
+      background: var(--bg);
+      border-left: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      z-index: 90;
+      box-shadow: -8px 0 24px rgba(0,0,0,0.12);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(10px);
+      transition: opacity 160ms ease, transform 160ms ease;
+    }
+    .drawer-preview-list.visible {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateX(0);
+    }
+    .drawer-item {
+      display: grid;
+      grid-template-columns: 36px 1fr;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 120ms ease;
+    }
+    .drawer-item:hover {
+      background: var(--hover);
+    }
+    .drawer-item.selected {
+      background: var(--selected);
+      box-shadow: inset 2px 0 0 var(--accent);
+    }
+    .drawer-item-num {
+      font-family: ui-monospace, Menlo, monospace;
+      color: var(--dim);
+      font-size: 11px;
+    }
+    .drawer-item-content strong {
+      display: block;
+      color: var(--text);
+      margin-bottom: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .drawer-item-content span {
+      color: var(--muted);
+      font-size: 11px;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      overflow: hidden;
+    }
+
+    /* 对比分析小结栏 */
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 16px;
+      margin-top: 24px;
+    }
+    .card-insight {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 18px;
+    }
+    .card-insight h3 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      font-weight: 650;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .badge-scheme {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .badge-scheme.green { background: #059669; color: #fff; }
+    .badge-scheme.blue { background: #2563eb; color: #fff; }
+    .badge-scheme.gray { background: #4b5563; color: #fff; }
+    .card-insight ul {
+      margin: 0;
+      padding-left: 18px;
+      font-size: 12.5px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="header">
+      <div>
+        <div class="eyebrow">Interactive Prototype · Huashu Design</div>
+        <h1>会话大纲与标尺交互：图一悬浮卡片 vs 图二抽屉列表</h1>
+        <p class="desc">
+          以图一的单轮预览替代图二的全高列表。对话及服务器状态均为虚构示例，不反映真实环境。
+        </p>
+      </div>
+      <div>
+        <button type="button" class="btn-tweak" id="btnThemeToggle">切换浅色 / 深色</button>
+      </div>
+    </div>
+
+    <!-- 交互调参栏 (Tweaks) -->
+    <div class="tweaks-bar">
+      <div class="tweak-group">
+        <span class="tweak-label">交互方案:</span>
+        <button type="button" class="btn-tweak active" data-scheme="A">方案 A：极简随动悬浮卡片 (图一核心)</button>
+        <button type="button" class="btn-tweak" data-scheme="B">方案 B：带 ☰ 锚点滑块卡片 (图一原貌)</button>
+        <button type="button" class="btn-tweak" data-scheme="C">方案 C：图二现状 (320px 全高抽屉)</button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="tweak-group">
+        <span class="tweak-label">视口尺寸:</span>
+        <button type="button" class="btn-tweak active" id="btnViewDesktop">桌面宽屏 (Desktop)</button>
+        <button type="button" class="btn-tweak" id="btnViewMobile">移动端窄屏 (Mobile)</button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="tweak-group">
+        <span class="tweak-label">导轨模拟:</span>
+        <button type="button" class="btn-tweak" id="btnJump5">模拟跳至图一第 5 轮</button>
+      </div>
+    </div>
+
+    <!-- 视口模拟器 -->
+    <div class="viewport-frame">
+      <div class="viewport-mock" id="viewportMock">
+        <div class="chat-layout">
+          <!-- 消息流正文容器 -->
+          <div class="chat-content-container" id="chatScrollArea">
+            <div class="chat-inner-stream">
+
+              <!-- Turn 1 -->
+              <div class="turn-block" id="turn-0" data-turn="0">
+                <div class="user-msg-row">
+                  <div class="user-bubble">分析ssh myclaw-lan，为啥登录不上</div>
+                  <div class="user-avatar">B</div>
+                </div>
+                <div class="assistant-msg-row">
+                  <div class="assistant-avatar">Pi</div>
+                  <div class="assistant-body">
+                    <p>🔍 <strong>检查结果</strong>：SSH 端口现已恢复连通。排查发现是此前自动下发给容器的临时密钥在 20:00 过期导致。已通过主机控制平面重新注入并重启轻量凭据代理。</p>
+                    <div class="code-snippet">ssh -o BatchMode=yes myclaw-lan 'uptime && free -m'</div>
+                    <p>当前 CPU 占用 1.2%，可用内存 6.4 GiB，状态恢复健康。</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Turn 2 -->
+              <div class="turn-block" id="turn-1" data-turn="1">
+                <div class="user-msg-row">
+                  <div class="user-bubble">可以登录了，分析服务器状态</div>
+                  <div class="user-avatar">B</div>
+                </div>
+                <div class="assistant-msg-row">
+                  <div class="assistant-avatar">Pi</div>
+                  <div class="assistant-body">
+                    <p>🔍 <strong>服务器全景健康扫描</strong>：系统运行正常，网络延迟稳定在 12ms。存储方面：根分区 <code>/</code> 使用率已达 78%（可用仅剩约 8.2 GiB），建议尽快做清理。</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Turn 3 -->
+              <div class="turn-block" id="turn-2" data-turn="2">
+                <div class="user-msg-row">
+                  <div class="user-bubble">列出可以安全清理的文件/文件夹</div>
+                  <div class="user-avatar">B</div>
+                </div>
+                <div class="assistant-msg-row">
+                  <div class="assistant-avatar">Pi</div>
+                  <div class="assistant-body">
+                    <p>🔍 <strong>低风险清理候选（须先确认无运行中构建任务）</strong>：</p>
+                    <table class="mini-table">
+                      <thead>
+                        <tr><th>路径</th><th>预估大小</th><th>风险等级</th></tr>
+                      </thead>
+                      <tbody>
+                        <tr><td><code>~/.cache/pip</code></td><td>450 MiB</td><td>零风险</td></tr>
+                        <tr><td><code>/var/log/journal/*</code></td><td>1.1 GiB</td><td>低（可保留近7天）</td></tr>
+                        <tr><td><code>/tmp/cargo-build-*</code></td><td>820 MiB</td><td>零风险</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Turn 4 -->
+              <div class="turn-block" id="turn-3" data-turn="3">
+                <div class="user-msg-row">
+                  <div class="user-bubble">还没其他的？</div>
+                  <div class="user-avatar">B</div>
+                </div>
+                <div class="assistant-msg-row">
+                  <div class="assistant-avatar">Pi</div>
+                  <div class="assistant-body">
+                    <p>有。新增约 <strong>215 MiB</strong> 的低风险候选：<code>~/.rustup/toolchains/old-nightly</code>。此外 Docker 悬空孤立镜像与未引用的构建缓存约有 3.8 GiB。</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Turn 5: 图一真实截图所在内容 -->
+              <div class="turn-block" id="turn-4" data-turn="4">
+                <div class="user-msg-row">
+                  <div class="user-bubble">当前项目是否能实现，通过会话，创建新会话？</div>
+                  <div class="user-avatar">B</div>
+                </div>
+                <div class="assistant-msg-row">
+                  <div class="assistant-avatar">Pi</div>
+                  <div class="assistant-body">
+                    <h2>结论</h2>
+                    <p>要看你说的“通过会话创建新会话”是哪一层，答案不同：</p>
+                    <table class="mini-table">
+                      <thead>
+                        <tr><th>含义</th><th>当前是否支持</th></tr>
+                      </thead>
+                      <tbody>
+                        <tr><td>用户在会话界面点“新建会话”，或从当前会话 fork</td><td>原生支持</td></tr>
+                        <tr><td>Agent 在当前会话中通过内置 tool 自动发起子会话</td><td>支持 Subagent</td></tr>
+                      </tbody>
+                    </table>
+                    <p>（出现在左侧边栏，可随时切换并保持各自上下文独立）</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Turn 6 -->
+              <div class="turn-block" id="turn-5" data-turn="5">
+                <div class="user-msg-row">
+                  <div class="user-bubble">好的，那 fork 会话在侧边栏的具体交互是怎样的？</div>
+                  <div class="user-avatar">B</div>
+                </div>
+                <div class="assistant-msg-row">
+                  <div class="assistant-avatar">Pi</div>
+                  <div class="assistant-body">
+                    <p>从当前选中的历史分支节点切出一条新分支，在 <code>~/.pi/agent/sessions/</code> 复制一份全新的 <code>.jsonl</code> 记录。侧边栏会立即生成带 4 位哈希后缀的新条目，无需重启服务端。</p>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- 右侧导航导轨 (Minimap Rail) -->
+          <div class="minimap-rail-wrap" id="minimapRail">
+            <div class="rail-track-line"></div>
+
+            <!-- 各轮次刻度点 -->
+            <div class="rail-node-dot" data-turn-idx="0" style="top: 15%;"></div>
+            <div class="rail-node-dot" data-turn-idx="1" style="top: 30%;"></div>
+            <div class="rail-node-dot" data-turn-idx="2" style="top: 45%;"></div>
+            <div class="rail-node-dot" data-turn-idx="3" style="top: 60%;"></div>
+            <div class="rail-node-dot active" data-turn-idx="4" style="top: 75%;"></div>
+            <div class="rail-node-dot" data-turn-idx="5" style="top: 90%;"></div>
+
+            <!-- 方案 B 的 ☰ 滑块指示器 (跟随光标或视口) -->
+            <div class="rail-scrub-handle" id="railHandle" style="top: 75%; display: none;">
+              <svg viewBox="0 0 24 24" fill="none">
+                <line x1="4" y1="7" x2="20" y2="7"></line>
+                <line x1="4" y1="12" x2="20" y2="12"></line>
+                <line x1="4" y1="17" x2="20" y2="17"></line>
+              </svg>
+            </div>
+
+            <!-- 快速回到底部圆形按钮 ⌄ -->
+            <button type="button" class="btn-scroll-bottom" id="btnScrollBottom" title="回到底部">
+              <svg viewBox="0 0 24 24" fill="none">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </button>
+          </div>
+
+          <!-- =======================================================
+               方案 A & B：图一悬浮单轮预览卡片 (Floating Preview Card)
+               ======================================================= -->
+          <div class="floating-preview-card" id="floatingCard">
+            <div class="card-topbar">
+              <span class="card-turn-pill" id="cardTurnPill">05 / 06</span>
+              <span class="card-tool-badge">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2">
+                  <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
+                </svg>
+                <span id="cardToolCount">2 工具</span>
+              </span>
+            </div>
+            <div class="card-title" id="cardTitle">当前项目是否能实现，通过会话，创建新会话？</div>
+            <div class="card-snippet" id="cardSnippet">
+              <strong>## 结论</strong> 要看你说的“通过会话创建新会话”是哪一层，答案不同：| 含义 | 当前是否支持 | |---|---| | 用户在会话界面点“新建会话”，或从当前会话 fork ...
+            </div>
+            <div class="card-hint">
+              <span>点击直接平滑定位</span>
+              <span class="card-hint-key">跳转 ↵</span>
+            </div>
+          </div>
+
+          <!-- =======================================================
+               方案 C：图二现状 320px 全高抽屉列表 (Current Drawer)
+               ======================================================= -->
+          <div class="drawer-preview-list" id="drawerList">
+            <div class="drawer-item" data-turn="0">
+              <div class="drawer-item-num">01<br><small>7</small></div>
+              <div class="drawer-item-content">
+                <strong>分析ssh myclaw-lan，为啥登录不上</strong>
+                <span>🔍 检查结果：SSH 现已正常，临时密钥过期导致...</span>
+              </div>
+            </div>
+            <div class="drawer-item" data-turn="1">
+              <div class="drawer-item-num">02<br><small>4</small></div>
+              <div class="drawer-item-content">
+                <strong>可以登录了，分析服务器状态</strong>
+                <span>🔍 检查结果：SSH 现已正常，根分区占用 78%...</span>
+              </div>
+            </div>
+            <div class="drawer-item" data-turn="2">
+              <div class="drawer-item-num">03<br><small>9</small></div>
+              <div class="drawer-item-content">
+                <strong>列出可以安全清理的文件/文件夹</strong>
+                <span>🔍 低风险候选：~/.cache/pip, /var/log...</span>
+              </div>
+            </div>
+            <div class="drawer-item" data-turn="3">
+              <div class="drawer-item-num">04<br><small>7</small></div>
+              <div class="drawer-item-content">
+                <strong>还没其他的？</strong>
+                <span>有。新增约 215 MiB 的低风险候选：old-nightly...</span>
+              </div>
+            </div>
+            <div class="drawer-item selected" data-turn="4">
+              <div class="drawer-item-num">05<br><small>2</small></div>
+              <div class="drawer-item-content">
+                <strong>当前项目是否能实现，通过会话，创建新会话？</strong>
+                <span>## 结论 要看你说的“通过会话创建新会话”是哪一层...</span>
+              </div>
+            </div>
+            <div class="drawer-item" data-turn="5">
+              <div class="drawer-item-num">06<br><small>3</small></div>
+              <div class="drawer-item-content">
+                <strong>好的，那 fork 会话在侧边栏的具体交互是怎样的？</strong>
+                <span>从当前分支末尾切出新分支，复制全新 .jsonl...</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- 方案对比评估表 -->
+    <div class="comparison-grid">
+      <div class="card-insight">
+        <h3><span class="badge-scheme green">方案 A · 推荐</span> 图一随动悬浮卡片 (Hover Popover)</h3>
+        <ul>
+          <li><strong>缩小遮挡区域</strong>：单轮卡片随鼠标 Y 轴浮现，仍会遮挡卡片下方的正文。</li>
+          <li><strong>零认知过载</strong>：鼠标指哪里就看哪一轮，不需要像图二那样先弹列表再滚动找条目。</li>
+          <li><strong>极速平滑直达</strong>：直接点击卡片或导轨，正文秒级平滑滚动到指定轮次。</li>
+        </ul>
+      </div>
+
+      <div class="card-insight">
+        <h3><span class="badge-scheme blue">方案 B · 增强</span> 图一带 ☰ 锚点滑块</h3>
+        <ul>
+          <li><strong>视口位置强暗示</strong>：导轨上的 <code>☰</code> 实时指示当前屏幕处于第几轮。</li>
+          <li><strong>可拖拽 Scrub</strong>：按住 <code>☰</code> 上下滑动时卡片跟随，松手即跳转，极具触控与桌面拖拽实感。</li>
+          <li><strong>触屏探索</strong>：窄屏下可触摸导轨唤起卡片；实际易用性仍需设备验证。</li>
+        </ul>
+      </div>
+
+      <div class="card-insight">
+        <h3><span class="badge-scheme gray">方案 C · 现状基准</span> 图二现有 320px 全高抽屉</h3>
+        <ul>
+          <li><strong>缺陷 1：严重遮挡</strong>：横向侵占 320px，笔记本屏幕上直接遮蔽一半聊天记录。</li>
+          <li><strong>缺陷 2：多余列表嵌套</strong>：在已有对话列表外又套了一层全量列表，层级冗余。</li>
+          <li><strong>缺陷 3：移动端不可用</strong>：因此在当前 <code>ChatWindow.tsx:1368</code> 中被直接针对 <code>isMobile</code> 彻底注销。</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 演示数据：标题参考截图，其余内容为虚构示例。
+    const turnsData = [
+      {
+        index: 0,
+        turnNumber: "01",
+        title: "分析ssh myclaw-lan，为啥登录不上",
+        snippet: "🔍 检查结果：SSH 现已正常，临时密钥过期导致。已通过主机控制平面重新注入并重启轻量凭据代理...",
+        toolCount: 7,
+        topRatio: 0.15
+      },
+      {
+        index: 1,
+        turnNumber: "02",
+        title: "可以登录了，分析服务器状态",
+        snippet: "🔍 检查结果：系统运行正常，网络延迟稳定在 12ms。根分区 / 使用率已达 78%（可用仅剩约 8.2 GiB）...",
+        toolCount: 4,
+        topRatio: 0.30
+      },
+      {
+        index: 2,
+        turnNumber: "03",
+        title: "列出可以安全清理的文件/文件夹",
+        snippet: "🔍 低风险清理候选：~/.cache/pip (450 MiB), /var/log/journal/* (1.1 GiB), /tmp/cargo-build-*...",
+        toolCount: 9,
+        topRatio: 0.45
+      },
+      {
+        index: 3,
+        turnNumber: "04",
+        title: "还没其他的？",
+        snippet: "有。新增约 215 MiB 的低风险候选：~/.rustup/toolchains/old-nightly。此外 Docker 悬空孤立镜像约 3.8 GiB...",
+        toolCount: 7,
+        topRatio: 0.60
+      },
+      {
+        index: 4,
+        turnNumber: "05",
+        title: "当前项目是否能实现，通过会话，创建新会话？",
+        snippet: "## 结论 要看你说的“通过会话创建新会话”是哪一层，答案不同：| 含义 | 当前是否支持 | |---|---| | 用户在会话界面点“新建会话”，或从当前会话 fork ...",
+        toolCount: 2,
+        topRatio: 0.75
+      },
+      {
+        index: 5,
+        turnNumber: "06",
+        title: "好的，那 fork 会话在侧边栏的具体交互是怎样的？",
+        snippet: "从当前选中的历史分支节点切出一条新分支，在 ~/.pi/agent/sessions/ 复制一份全新的 .jsonl 记录并附带短哈希...",
+        toolCount: 3,
+        topRatio: 0.90
+      }
+    ];
+
+    let currentScheme = "A";
+    let activeTurnIndex = 4;
+    let isHoveringRail = false;
+    let hideTimer = null;
+
+    // DOM 元素引用
+    const minimapRail = document.getElementById("minimapRail");
+    const floatingCard = document.getElementById("floatingCard");
+    const cardTurnPill = document.getElementById("cardTurnPill");
+    const cardToolCount = document.getElementById("cardToolCount");
+    const cardTitle = document.getElementById("cardTitle");
+    const cardSnippet = document.getElementById("cardSnippet");
+    const railHandle = document.getElementById("railHandle");
+    const drawerList = document.getElementById("drawerList");
+    const chatScrollArea = document.getElementById("chatScrollArea");
+    const viewportMock = document.getElementById("viewportMock");
+
+    // 更新卡片内容与位置
+    function updateFloatingCard(turnIndex, clientY) {
+      const data = turnsData[turnIndex];
+      if (!data) return;
+      activeTurnIndex = turnIndex;
+
+      cardTurnPill.textContent = `${data.turnNumber} / 06`;
+      cardToolCount.textContent = `${data.toolCount} 工具`;
+      cardTitle.textContent = data.title;
+      cardSnippet.innerHTML = `<strong>${data.snippet.slice(0, 7)}</strong> ${data.snippet.slice(7)}`;
+
+      // 计算卡片在 rail 容器中的 Y 坐标
+      const railRect = minimapRail.getBoundingClientRect();
+      let targetY;
+      if (typeof clientY === "number") {
+        targetY = clientY - railRect.top;
+      } else {
+        targetY = railRect.height * data.topRatio;
+      }
+
+      // 边界限制，防止卡片冲出上下视口
+      const cardHeight = floatingCard.offsetHeight || 160;
+      const clampedY = Math.max(cardHeight / 2 + 10, Math.min(railRect.height - cardHeight / 2 - 10, targetY));
+      floatingCard.style.top = `${clampedY}px`;
+
+      // 同步刻度点高亮
+      document.querySelectorAll(".rail-node-dot").forEach((dot, idx) => {
+        dot.classList.toggle("active", idx === turnIndex);
+      });
+
+      // 方案 B 下同步移动 ☰ handle
+      if (currentScheme === "B") {
+        railHandle.style.top = `${clampedY}px`;
+      }
+    }
+
+    function showCard() {
+      clearTimeout(hideTimer);
+      if (currentScheme === "C") {
+        drawerList.classList.add("visible");
+        floatingCard.classList.remove("visible");
+      } else {
+        drawerList.classList.remove("visible");
+        floatingCard.classList.add("visible");
+      }
+    }
+
+    function scheduleHideCard() {
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => {
+        if (!isHoveringRail) {
+          floatingCard.classList.remove("visible");
+          if (currentScheme === "C") {
+            drawerList.classList.remove("visible");
+          }
+        }
+      }, 200);
+    }
+
+    // 导轨鼠标滑动交互
+    drawerList.addEventListener("mouseenter", () => { isHoveringRail = true; clearTimeout(hideTimer); });
+    drawerList.addEventListener("mouseleave", () => { isHoveringRail = false; scheduleHideCard(); });
+    minimapRail.addEventListener("mouseenter", () => {
+      isHoveringRail = true;
+      showCard();
+    });
+
+    minimapRail.addEventListener("mouseleave", () => {
+      isHoveringRail = false;
+      scheduleHideCard();
+    });
+
+    minimapRail.addEventListener("mousemove", (e) => {
+      isHoveringRail = true;
+      showCard();
+      const rect = minimapRail.getBoundingClientRect();
+      const ratio = (e.clientY - rect.top) / rect.height;
+
+      // 查找最近的 Turn
+      let nearestIdx = 0;
+      let minDiff = 999;
+      turnsData.forEach((turn, idx) => {
+        const diff = Math.abs(turn.topRatio - ratio);
+        if (diff < minDiff) {
+          minDiff = diff;
+          nearestIdx = idx;
+        }
+      });
+
+      updateFloatingCard(nearestIdx, e.clientY);
+    });
+
+    // 指针拖动和触摸：松手后定位，卡片保持显示以便查看。
+    let dragging = false;
+    function selectAtPointer(e) {
+      const rect = minimapRail.getBoundingClientRect();
+      const ratio = (e.clientY - rect.top) / rect.height;
+      const nearest = turnsData.reduce((best, turn) =>
+        Math.abs(turn.topRatio - ratio) < Math.abs(best.topRatio - ratio) ? turn : best
+      );
+      updateFloatingCard(nearest.index, e.clientY);
+      showCard();
+    }
+    minimapRail.addEventListener("pointerdown", (e) => {
+      if (e.target.closest("button")) return;
+      dragging = true;
+      minimapRail.setPointerCapture(e.pointerId);
+      railHandle.classList.add("dragging");
+      selectAtPointer(e);
+    });
+    minimapRail.addEventListener("pointermove", (e) => { if (dragging) selectAtPointer(e); });
+    minimapRail.addEventListener("pointerup", () => {
+      if (!dragging) return;
+      dragging = false;
+      railHandle.classList.remove("dragging");
+      scrollToTurn(activeTurnIndex);
+    });
+    minimapRail.addEventListener("pointercancel", () => { dragging = false; railHandle.classList.remove("dragging"); });
+
+    // 点击导轨或卡片直接平滑跳转
+    function scrollToTurn(idx) {
+      const block = document.getElementById(`turn-${idx}`);
+      if (block) {
+        block.scrollIntoView({ behavior: "smooth", block: "start" });
+        block.classList.add("highlight");
+        setTimeout(() => block.classList.remove("highlight"), 1200);
+      }
+    }
+
+    floatingCard.addEventListener("click", () => {
+      scrollToTurn(activeTurnIndex);
+    });
+
+    floatingCard.addEventListener("mouseenter", () => {
+      isHoveringRail = true;
+      clearTimeout(hideTimer);
+    });
+    floatingCard.addEventListener("mouseleave", () => {
+      isHoveringRail = false;
+      scheduleHideCard();
+    });
+
+    // 方案 C 抽屉点击跳转
+    document.querySelectorAll(".drawer-item").forEach((item) => {
+      item.addEventListener("click", (e) => {
+        const turnIdx = parseInt(item.getAttribute("data-turn"), 10);
+        scrollToTurn(turnIdx);
+        document.querySelectorAll(".drawer-item").forEach(i => i.classList.remove("selected"));
+        item.classList.add("selected");
+      });
+    });
+
+    // 回到底部按钮
+    document.getElementById("btnScrollBottom").addEventListener("click", (e) => {
+      e.stopPropagation();
+      chatScrollArea.scrollTo({ top: chatScrollArea.scrollHeight, behavior: "smooth" });
+    });
+
+    // 方案切换控制
+    document.querySelectorAll("[data-scheme]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("[data-scheme]").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        currentScheme = btn.getAttribute("data-scheme");
+
+        if (currentScheme === "A") {
+          railHandle.style.display = "none";
+          drawerList.classList.remove("visible");
+          floatingCard.classList.remove("visible");
+        } else if (currentScheme === "B") {
+          railHandle.style.display = "grid";
+          drawerList.classList.remove("visible");
+          updateFloatingCard(activeTurnIndex);
+        } else if (currentScheme === "C") {
+          railHandle.style.display = "none";
+          floatingCard.classList.remove("visible");
+          drawerList.classList.add("visible");
+        }
+      });
+    });
+
+    // 视口尺寸切换 (桌面 vs 移动端)
+    const btnViewDesktop = document.getElementById("btnViewDesktop");
+    const btnViewMobile = document.getElementById("btnViewMobile");
+
+    btnViewDesktop.addEventListener("click", () => {
+      btnViewDesktop.classList.add("active");
+      btnViewMobile.classList.remove("active");
+      viewportMock.classList.remove("mobile-mode");
+    });
+    btnViewMobile.addEventListener("click", () => {
+      btnViewMobile.classList.add("active");
+      btnViewDesktop.classList.remove("active");
+      viewportMock.classList.add("mobile-mode");
+    });
+
+    // 主题切换 (浅色 / 深色)
+    document.getElementById("btnThemeToggle").addEventListener("click", () => {
+      const html = document.documentElement;
+      const isDark = html.getAttribute("data-theme") === "dark";
+      html.setAttribute("data-theme", isDark ? "light" : "dark");
+    });
+
+    // 模拟跳转到第 5 轮
+    document.getElementById("btnJump5").addEventListener("click", () => {
+      scrollToTurn(4);
+      updateFloatingCard(4);
+      showCard();
+      setTimeout(scheduleHideCard, 2200);
+    });
+
+    // 初始化显示第 5 轮状态
+    updateFloatingCard(4);
+  </script>
+</body>
+</html>

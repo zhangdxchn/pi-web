@@ -1,0 +1,313 @@
+<!doctype html>
+<!--
+  THROWAWAY DESIGN PROTOTYPE — not application code.
+  Question: how should List / Tree work in the three existing changed-file views?
+  Assumptions: List remains the production default; each of the three views has
+  its own per-browser choice; folders are independent of the regular file explorer;
+  the first level starts open. Prototype state is in memory, not localStorage.
+  The working-change sample comes from the user's screenshot. Commit entries and
+  statistics come from local commit 4d1e502. Clicks never modify a repository.
+  Variants: A native rows, B bordered folder groups, C compact single-folder chains.
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>改动文件：列表与树形视图 · 交互原型</title>
+<style>
+  :root { color-scheme: light; --bg:#fff; --panel:#f5f5f5; --hover:#eee; --selected:#e8edf8; --border:#e0e0e0; --text:#1a1a1a; --muted:#515c6b; --dim:#87909d; --accent:#245bce; --plus:#17b851; --minus:#ef4444; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#e9ebee; color:var(--text); font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  button { font:inherit; }
+  button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .wrap { width:min(1390px,calc(100% - 64px)); margin:0 auto; padding:37px 0 115px; }
+  .mast { display:flex; justify-content:space-between; gap:24px; align-items:flex-end; margin:0 0 24px; }
+  .eyebrow { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:11px; font-weight:650; letter-spacing:.08em; text-transform:uppercase; }
+  .eyebrow i { width:7px; height:7px; border-radius:50%; background:var(--accent); }
+  h1 { margin:7px 0 5px; font-size:23px; line-height:1.25; letter-spacing:-.03em; font-weight:650; }
+  .intro { margin:0; color:var(--muted); font-size:12px; }
+  .prototype-tag { flex:none; border:1px solid #d1d6de; border-radius:5px; padding:5px 8px; color:#5c6572; background:#f4f5f6; font-size:11px; }
+  .layout { display:grid; grid-template-columns:minmax(285px,380px) minmax(0,1fr); gap:20px; align-items:start; }
+  .layout > section, .column { min-width:0; }
+  .column { display:grid; gap:20px; }
+  .section-label { display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin:0 0 7px 1px; }
+  .section-label strong { font-size:12px; font-weight:650; color:#303844; }
+  .section-label span { color:#727c8a; font-size:11px; }
+  .window { min-width:0; background:var(--panel); border:1px solid #d7d9dc; border-radius:6px; overflow:hidden; box-shadow:0 2px 6px #1c24300a,0 12px 28px #1c24300a; }
+  .sidebar { height:568px; display:flex; flex-direction:column; }
+  .sidebar-head { display:flex; align-items:center; gap:6px; min-height:32px; padding:0 9px; border-bottom:1px solid var(--border); color:var(--muted); font-size:11px; font-weight:650; letter-spacing:.055em; }
+  .sidebar-head .spacer { flex:1; }
+  .toolbar-icons { display:flex; align-items:center; gap:13px; font-size:14px; color:#667383; font-weight:400; letter-spacing:0; }
+  .toolbar-icons .active { color:var(--accent); }
+  .project-line { display:flex; gap:6px; padding:7px 7px 3px; }
+  .project-pill { height:27px; min-width:0; display:flex; align-items:center; gap:6px; padding:0 8px; border:1px solid #dedfe1; border-radius:6px; background:#ededed; color:#242b36; font:11px ui-monospace,SFMono-Regular,Menlo,monospace; white-space:nowrap; overflow:hidden; }
+  .project-pill:first-child { flex:1; }
+  .project-pill .shorten { overflow:hidden; direction:rtl; text-overflow:ellipsis; white-space:nowrap; }
+  .branch { flex:none; color:#3e4b5d; }
+  .blue-dot { width:8px; height:8px; border-radius:50%; background:var(--accent); flex:none; }
+  .sidebar-body { flex:1; min-height:0; display:flex; flex-direction:column; }
+  .list-head { min-height:32px; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 8px; color:var(--muted); font-size:11px; }
+  .stats { display:flex; gap:6px; white-space:nowrap; }
+  .add { color:var(--plus); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .del { color:var(--minus); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .mode { display:inline-flex; flex:none; padding:2px; gap:1px; border:1px solid #d9dce1; background:#eee; border-radius:5px; }
+  .mode button { border:0; border-radius:3px; padding:2px 7px; color:#626d7b; background:transparent; cursor:pointer; font-size:10.5px; line-height:16px; }
+  .mode button[aria-pressed="true"] { background:#fff; color:var(--accent); box-shadow:0 1px 3px #00000018; font-weight:650; }
+  .files-scroll { min-height:0; overflow:auto; padding:0 6px 12px; }
+  .sidebar .files-scroll { flex:1; }
+  .side-bottom { display:flex; justify-content:space-around; padding:13px 3px; border-top:1px solid var(--border); color:#515c6b; font-size:12px; }
+  .details { height:322px; display:flex; flex-direction:column; }
+  .details.commit { height:369px; }
+  .detail-heading { border-bottom:1px solid var(--border); padding:9px 12px; display:flex; align-items:flex-start; gap:10px; }
+  .heading-main { flex:1; min-width:0; }
+  .heading-title { display:flex; flex-wrap:wrap; gap:8px; align-items:center; font-size:13px; font-weight:650; }
+  .hash { border:1px solid var(--border); padding:1px 5px; border-radius:4px; background:var(--bg); color:var(--muted); font:11px ui-monospace,monospace; }
+  .meta { display:flex; flex-wrap:wrap; gap:7px; margin-top:3px; font-size:11px; color:var(--muted); }
+  .meta strong { color:var(--text); }
+  .meta a { color:var(--accent); text-decoration:underline; text-underline-offset:2px; }
+  .close { color:var(--muted); font-size:15px; line-height:1; padding:0 2px; }
+  .details .files-scroll { flex:1; padding:0 12px 12px; }
+  .details .list-head { margin:0 4px; padding:0 8px; }
+  .file-row, .folder-row { width:100%; min-width:0; height:25px; display:flex; align-items:center; gap:6px; border:0; border-radius:4px; background:transparent; color:var(--text); text-align:left; cursor:pointer; padding:0 6px 0 calc(4px + var(--depth) * 15px); }
+  .file-row:hover, .folder-row:hover { background:var(--hover); }
+  .folder-row { font-weight:500; }
+  .chevron { flex:none; width:10px; height:10px; position:relative; }
+  .chevron::before { content:""; position:absolute; left:2px; top:2px; width:5px; height:5px; border-right:1.5px solid #718092; border-bottom:1.5px solid #718092; transform:rotate(-45deg); }
+  .folder-row[aria-expanded="true"] .chevron::before { top:1px; transform:rotate(45deg); }
+  .chevron-space { width:10px; flex:none; }
+  .icon { width:14px; height:14px; object-fit:contain; flex:none; }
+  .name { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+  .path { color:var(--dim); }
+  .status { flex:none; width:12px; text-align:center; font:600 11px ui-monospace,monospace; }
+  .status.M { color:#d2a03a; } .status.U, .status.A { color:#16bf62; }
+  .line-stats { display:flex; flex:none; gap:5px; font-size:10px; }
+  .diff { flex:none; color:var(--accent); font-size:10px; white-space:nowrap; }
+  .side-row { position:relative; }
+  .mention { display:none; position:absolute; right:5px; top:3px; color:var(--accent); padding:1px 4px; border:1px solid var(--border); background:var(--bg); border-radius:3px; font-size:10px; cursor:pointer; }
+  .side-row:hover .mention, .side-row:focus-within .mention { display:inline; }
+  .sidebar .tree-file .status { order:4; margin-left:auto; }
+  .details .file-row { height:30px; margin-bottom:3px; padding-right:8px; }
+  .details .folder-row { height:29px; }
+  .details.list-mode .file-row { border:1px solid var(--border); background:var(--bg); }
+  .details.list-mode .file-row:hover { background:var(--hover); }
+  .details.tree-mode[data-variant="b"] .file-row { background:var(--bg); border:1px solid var(--border); }
+  .details.tree-mode[data-variant="b"] .folder-row { background:#e9eaec; border:1px solid #dbdde1; margin-bottom:3px; }
+  .sidebar[data-variant="b"] .folder-row { background:#ebeced; }
+  .details.tree-mode[data-variant="c"] .folder-row { color:#2e465f; font-weight:600; }
+  .sidebar[data-variant="c"] .folder-row { color:#2e465f; font-weight:600; }
+  .under-note { margin:8px 2px 0; color:#6c7682; font-size:11px; line-height:1.5; }
+  .sample-note { display:flex; align-items:center; gap:8px; padding:12px 14px; border:1px solid #d6dbe1; border-radius:6px; background:#f4f5f6; color:#596675; font-size:11px; }
+  .sample-note strong { color:#303b49; white-space:nowrap; }
+  .variant-bar { position:fixed; z-index:10; left:50%; bottom:18px; transform:translateX(-50%); display:flex; align-items:center; gap:4px; padding:5px; border:1px solid #cdd3db; border-radius:9px; background:#fff; box-shadow:0 5px 25px #1d293d26; white-space:nowrap; }
+  .variant-bar > span { color:#758091; padding:0 5px; font-size:10px; }
+  .variant-bar button { border:0; border-radius:5px; background:transparent; color:#626d7c; cursor:pointer; padding:6px 9px; font-size:11px; }
+  .variant-bar button[aria-pressed="true"] { background:#e8edf8; color:#245bce; font-weight:650; }
+  .variant-bar .cycle { padding:6px; color:#3d4b5d; }
+  .toast { position:fixed; bottom:77px; left:50%; z-index:20; transform:translate(-50%,8px); opacity:0; pointer-events:none; padding:8px 12px; border-radius:5px; background:#263344; color:white; font-size:12px; transition:opacity .12s,transform .12s; }
+  .toast.show { opacity:1; transform:translate(-50%,0); }
+  @media (max-width:850px) { .wrap { width:min(680px,calc(100% - 28px)); padding-top:24px; } .layout { grid-template-columns:minmax(0,1fr); } .sidebar { height:430px; } .mast { align-items:flex-start; } .prototype-tag { display:none; } }
+  @media (max-width:480px) { h1 { font-size:20px; } .wrap { width:calc(100% - 20px); } .section-label span { font-size:10px; } .details .files-scroll { padding-left:6px; padding-right:6px; } .variant-bar > span { display:none; } .variant-bar button { padding:6px 7px; } .details.commit { height:355px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <div>
+      <div class="eyebrow"><i></i> Pi Web · interaction prototype</div>
+      <h1>改动文件：列表与树形视图</h1>
+      <p class="intro">三个入口各自选择视图；树里只显示发生改动的文件。</p>
+    </div>
+    <div class="prototype-tag">独立原型 · 不连接 Git</div>
+  </header>
+  <main class="layout">
+    <section>
+      <div class="section-label"><strong>01 / 文件侧边栏</strong><span>当前工作区的改动</span></div>
+      <div class="window sidebar" id="sidebar" data-variant="a">
+        <div class="sidebar-head"><span>⌄</span><span>FILES · 8</span><span class="spacer"></span><span class="toolbar-icons" aria-hidden="true"><span>›_</span><span>⑂</span><span>▱</span><span>↥</span><span>◴</span><span>⊙</span><span class="active">⊶</span><span>⌕</span></span></div>
+        <div class="project-line"><div class="project-pill"><span class="shorten">…/Workspaces/00_AI_project/pi-web</span><i class="blue-dot"></i></div><div class="project-pill branch">⑂ local-test 5 ⌄</div></div>
+        <div class="sidebar-body">
+          <div class="list-head"><div class="stats"><span>8 files</span><span class="add">+3232</span><span class="del">-1</span></div><div class="mode" data-mode-control="sidebar" role="group" aria-label="侧边栏改动文件视图"></div></div>
+          <div class="files-scroll" id="sidebar-files"></div>
+        </div>
+        <div class="side-bottom" aria-hidden="true"><span>⚙ Models</span><span>◇ Skills</span><span>☷ Settings</span></div>
+      </div>
+      <p class="under-note">文件仍打开工作区 Diff；悬停文件可见原有 @ mention 入口。</p>
+    </section>
+    <div class="column">
+      <section>
+        <div class="section-label"><strong>02 / Git Graph · 未提交改动</strong><span>工作区 Diff</span></div>
+        <div class="window details" id="working" data-variant="a">
+          <div class="detail-heading"><div class="heading-main"><div class="heading-title">Uncommitted Changes (8)</div></div><span class="close" aria-hidden="true">×</span></div>
+          <div class="list-head"><span>Changed files: 8</span><div class="mode" data-mode-control="working" role="group" aria-label="未提交改动文件视图"></div></div>
+          <div class="files-scroll" id="working-files"></div>
+        </div>
+      </section>
+      <section>
+        <div class="section-label"><strong>03 / Git Graph · 提交详情</strong><span>历史提交 Diff</span></div>
+        <div class="window details commit" id="commit" data-variant="a">
+          <div class="detail-heading"><div class="heading-main"><div class="heading-title">Merge branch 'feat/unread-session-group' into local-test <span class="hash">4d1e502</span></div><div class="meta"><strong>zhangdx</strong><span>·</span><span>2026-10-31 20:18</span><span>·</span><span>Parents:</span><a>620e5fd</a><a>5e254e7</a></div></div><span class="close" aria-hidden="true">×</span></div>
+          <div class="list-head"><span>Changed files: 29</span><div class="mode" data-mode-control="commit" role="group" aria-label="提交改动文件视图"></div></div>
+          <div class="files-scroll" id="commit-files"></div>
+        </div>
+      </section>
+      <div class="sample-note"><strong>原型说明</strong><span>三处开关互不影响；文件夹可单独折叠。文件点击仅显示模拟提示，不读写项目。</span></div>
+    </div>
+  </main>
+</div>
+<nav class="variant-bar" aria-label="原型方案选择">
+  <button class="cycle" id="previous" type="button" aria-label="上一个方案">←</button><span>展示方案</span>
+  <button type="button" data-variant-choice="a">A 原生树 · 推荐</button>
+  <button type="button" data-variant-choice="b">B 卡片树</button>
+  <button type="button" data-variant-choice="c">C 紧凑路径</button>
+  <button class="cycle" id="next" type="button" aria-label="下一个方案">→</button>
+</nav>
+<div class="toast" role="status" aria-live="polite"></div>
+<script>
+(() => {
+  const work = [
+    {path:'e2e/mermaid.mjs',status:'M',add:9,del:1},
+    {path:'.codegraph/.gitignore',status:'U',add:5,del:0},
+    {path:'prototypes/git-graph-actions-desktop.png',status:'U',add:0,del:0},
+    {path:'prototypes/git-graph-actions-mobile.png',status:'U',add:0,del:0},
+    {path:'prototypes/git-graph-actions-plan.html',status:'U',add:2941,del:0},
+    {path:'prototypes/git-graph-actions-plan.md',status:'U',add:145,del:0},
+    {path:'prototypes/git-graph-actions.html',status:'U',add:90,del:0},
+    {path:'research/tailscale-security-2026-10-31.md',status:'U',add:42,del:0},
+  ];
+  const commit = [
+    ['app/sidebar.css',35,6], ['components/SessionSidebar.test.mjs',3,1], ['components/SessionSidebar.tsx',96,18],
+    ['components/SessionTree.test.mjs',65,15], ['components/SessionTree.tsx',52,27], ['docs/agents/sessions.md',12,11],
+    ['e2e/README.md',1,0], ['e2e/run.mjs',4,0], ['e2e/session-unread.mjs',249,0],
+    ['lib/i18n/messages/en.ts',4,0], ['lib/i18n/messages/zh-CN.ts',4,0], ['lib/i18n/messages/zh-TW.ts',4,0],
+    ['lib/session-tree.test.mjs',132,18], ['lib/session-tree.ts',71,32], ['lib/sidebar-actions.test.mjs',13,6],
+    ['lib/sidebar-actions.ts',1,1], ['lib/sidebar-prefs.test.mjs',16,0], ['lib/sidebar-prefs.ts',23,1],
+    ['prototypes/unread-group-a-desktop.png',0,0], ['prototypes/unread-group-a-mobile.png',0,0],
+    ['prototypes/unread-group-a.html',245,0], ['prototypes/unread-group-desktop.png',0,0],
+    ['prototypes/unread-group-mobile.png',0,0], ['prototypes/unread-group-plan.html',2673,0],
+    ['prototypes/unread-group-plan.md',79,0], ['prototypes/unread-group-prototype.html',247,0],
+    ['prototypes/unread-stay-plan.html',2670,0], ['prototypes/unread-stay-plan.md',83,0],
+    ['prototypes/unread-stay-prototype.html',380,0],
+  ].map(([path,add,del]) => ({path,add,del}));
+  const samples = {sidebar:work, working:work, commit};
+  const folders = {sidebar:new Map(), working:new Map(), commit:new Map()};
+  const variants = ['a','b','c'];
+  const param = new URLSearchParams(location.search).get('variant');
+  let variant = variants.includes(param) ? param : 'a';
+  // Deliberately start on Tree to show the proposal; production defaults to List.
+  const modes = {sidebar:'tree', working:'tree', commit:'tree'};
+  let toastTimer;
+  const escape = (value) => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function icon(name, open) {
+    let type = '_file';
+    if (name === '__folder__') type = open ? '_folder_open' : '_folder';
+    else if (name === '.gitignore') type = 'git';
+    else {
+      const ext = name.split('.').pop().toLowerCase();
+      type = ({mjs:'javascript',js:'javascript',ts:'typescript',tsx:'typescript-react',css:'css',html:'html',md:'markdown'})[ext] || '_file';
+    }
+    const root = location.protocol === 'file:' ? '../public/' : '/';
+    return `<img class="icon" alt="" src="${root}icons/catppuccin/latte/${type}.svg">`;
+  }
+  function toTree(files) {
+    const root = [];
+    for (const file of files) {
+      const parts = file.path.split('/');
+      let list = root;
+      let current = '';
+      parts.forEach((part, i) => {
+        current = current ? `${current}/${part}` : part;
+        let node = list.find(item => item.path === current);
+        if (!node) { node = {name:part, path:current, children:[], file:i === parts.length-1 ? file : null}; list.push(node); }
+        list = node.children;
+      });
+    }
+    function sort(nodes) {
+      nodes.sort((a,b) => (!!a.file === !!b.file ? a.name.localeCompare(b.name) : a.file ? 1 : -1));
+      nodes.forEach(n => sort(n.children));
+    }
+    sort(root);
+    return root;
+  }
+  function fileRow(file, surface, depth, tree) {
+    const slash = file.path.lastIndexOf('/');
+    const filename = slash < 0 ? file.path : file.path.slice(slash+1);
+    const prefix = slash < 0 ? '' : file.path.slice(0,slash+1);
+    const isSidebar = surface === 'sidebar';
+    const status = file.status ? `<span class="status ${escape(file.status)}">${escape(file.status)}</span>` : '';
+    const lineStats = `<span class="line-stats">${file.add ? `<span class="add">+${file.add}</span>` : ''}${file.del ? `<span class="del">-${file.del}</span>` : ''}</span>`;
+    const title = isSidebar ? '模拟打开工作区 Diff' : surface === 'working' ? '模拟打开工作区 Diff' : '模拟打开提交 Diff';
+    const name = tree ? escape(filename) : `<span class="path">${escape(prefix)}</span>${escape(filename)}`;
+    const row = `<button type="button" class="file-row ${tree ? 'tree-file' : ''}" style="--depth:${depth}" data-file="${escape(file.path)}" data-surface="${surface}" title="${escape(file.path)} · ${title}">${tree ? '<span class="chevron-space"></span>' : ''}${!tree && status ? status : ''}${icon(filename)}<span class="name">${name}</span>${tree && status ? status : ''}${isSidebar ? '' : `${lineStats}<span class="diff">View Diff ↗</span>`}</button>`;
+    return isSidebar ? `<div class="side-row">${row}<button type="button" class="mention" data-mention="${escape(file.path)}" aria-label="模拟插入路径 ${escape(file.path)}">@ mention</button></div>` : row;
+  }
+  function treeRows(nodes, surface, depth=0) {
+    return nodes.map(node => {
+      if (node.file) return fileRow(node.file,surface,depth,true);
+      let shown = node;
+      let label = node.name;
+      if (variant === 'c') {
+        while (shown.children.length === 1 && !shown.children[0].file) { shown = shown.children[0]; label += '/' + shown.name; }
+      }
+      const open = folders[surface].has(shown.path) ? folders[surface].get(shown.path) : depth === 0;
+      return `<button type="button" class="folder-row" style="--depth:${depth}" data-folder="${escape(shown.path)}" data-surface="${surface}" aria-expanded="${open}" title="${escape(shown.path)}"><span class="chevron"></span>${icon('__folder__',open)}<span class="name">${escape(label)}</span></button>${open ? treeRows(shown.children,surface,depth+1) : ''}`;
+    }).join('');
+  }
+  function render() {
+    for (const surface of Object.keys(samples)) {
+      const mode = modes[surface];
+      const panel = document.getElementById(surface);
+      panel.dataset.variant = variant;
+      panel.classList.toggle('list-mode',mode === 'list');
+      panel.classList.toggle('tree-mode',mode === 'tree');
+      document.getElementById(surface+'-files').innerHTML = mode === 'list'
+        ? samples[surface].map(file => fileRow(file,surface,0,false)).join('')
+        : treeRows(toTree(samples[surface]),surface);
+      document.querySelector(`[data-mode-control="${surface}"]`).innerHTML = ['list','tree'].map(m => `<button type="button" data-mode="${m}" aria-pressed="${mode === m}">${m === 'list' ? 'List' : 'Tree'}</button>`).join('');
+    }
+    document.querySelectorAll('[data-variant-choice]').forEach(button => button.setAttribute('aria-pressed',String(button.dataset.variantChoice === variant)));
+  }
+  function chooseVariant(next) {
+    variant = next;
+    const url = new URL(location.href);
+    url.searchParams.set('variant',variant);
+    history.replaceState(null,'',url);
+    render();
+  }
+  function announce(message) {
+    const toast = document.querySelector('.toast');
+    toast.textContent = message;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'),2400);
+  }
+  document.addEventListener('click', event => {
+    const view = event.target.closest('[data-mode]');
+    const folder = event.target.closest('[data-folder]');
+    const file = event.target.closest('[data-file]');
+    const mention = event.target.closest('[data-mention]');
+    const choice = event.target.closest('[data-variant-choice]');
+    if (view) { const surface = view.closest('[data-mode-control]').dataset.modeControl; modes[surface] = view.dataset.mode; render(); document.querySelector(`[data-mode-control="${surface}"] [data-mode="${modes[surface]}"]`).focus(); }
+    else if (folder) {
+      const surface = folder.dataset.surface, path = folder.dataset.folder;
+      folders[surface].set(path,folder.getAttribute('aria-expanded') !== 'true');
+      render();
+      [...document.querySelectorAll(`#${surface} [data-folder]`)].find(button => button.dataset.folder === path)?.focus();
+    }
+    else if (mention) announce(`仅演示：插入路径 · ${mention.dataset.mention}`);
+    else if (file) announce(`仅演示：打开${file.dataset.surface === 'commit' ? '提交' : '工作区'} Diff · ${file.dataset.file}`);
+    else if (choice) chooseVariant(choice.dataset.variantChoice);
+  });
+  document.getElementById('previous').addEventListener('click',() => chooseVariant(variants[(variants.indexOf(variant)+2)%3]));
+  document.getElementById('next').addEventListener('click',() => chooseVariant(variants[(variants.indexOf(variant)+1)%3]));
+  document.addEventListener('keydown',event => {
+    if (event.target.matches('input, textarea, [contenteditable="true"]')) return;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      const step = event.key === 'ArrowLeft' ? 2 : 1;
+      chooseVariant(variants[(variants.indexOf(variant)+step)%3]);
+    }
+  });
+  render();
+})();
+</script>
+</body>
+</html>

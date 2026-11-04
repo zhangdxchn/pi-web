@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>会话导航 · 截图一参考原型</title>
+<!-- 基于用户补充的截图：白底、左侧密集短横线、当前轮次深色、右侧白色圆角预览卡片。交互是设计假设，示例内容非真实记录。 -->
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f1f2f4;color:#14171c;font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}button{font:inherit;cursor:pointer}button:focus-visible{outline:2px solid #526ca4;outline-offset:3px}.page{max-width:1120px;margin:auto;padding:28px 24px 48px}.head{display:flex;justify-content:space-between;align-items:end;gap:16px;margin-bottom:18px}.eyebrow{color:#858b95;font-size:11px;letter-spacing:.12em}.head h1{font-size:22px;margin:5px 0}.head p{margin:0;color:#858b95;font-size:13px}.controls{display:flex;gap:8px;flex-wrap:wrap}.controls button{border:1px solid #dadde2;border-radius:7px;background:#fff;padding:7px 11px;color:#555d69;font-size:12px}.controls button[aria-pressed=true]{background:#252932;color:#fff;border-color:#252932}.frame{height:720px;background:#fff;border:1px solid #e4e5e8;border-radius:8px;overflow:hidden;position:relative;box-shadow:0 12px 30px #2429340c}.frame.narrow{width:min(100%,412px);margin:auto}.scroll{height:100%;overflow:auto;scroll-behavior:smooth;padding:48px 80px 160px 48px;scrollbar-width:none}.scroll::-webkit-scrollbar{display:none}.conversation{max-width:700px;margin:auto}.turn{padding:0 0 72px;scroll-margin-top:35px}.user{display:flex;justify-content:flex-end;margin:0 0 12px}.bubble{background:#edf3ff;border-radius:20px;padding:13px 18px;max-width:75%;font-size:16px}.meta{text-align:right;color:#858b95;font-size:13px;margin-bottom:50px}.answer{font-size:15px;line-height:1.9}.answer h2{font-size:18px;margin:0 0 12px}.answer p{margin:0 0 14px}.answer code{background:#f6f6f6;border:1px solid #ececec;border-radius:5px;padding:1px 4px}.rail{position:absolute;right:22px;top:18%;bottom:18%;width:42px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:12px;touch-action:none}.tick{border:0;padding:12px 4px;background:transparent;width:42px;display:grid;place-items:center}.tick span{height:3px;width:25px;border-radius:4px;background:#d2d3d5;transition:width .12s,background .12s}.tick.current span{width:35px;background:#111319}.tick:hover span,.tick:focus-visible span{background:#797f89;width:32px}.tick.current:hover span{background:#111319}.native-scroll{position:absolute;right:5px;top:33%;width:5px;height:18%;background:#e1e1e1;border-radius:6px;pointer-events:none}.preview{position:absolute;right:74px;top:50%;transform:translateY(-50%);width:min(440px,calc(100% - 96px));background:white;border:1px solid #d9d9d9;border-radius:18px;box-shadow:0 4px 18px #0000000d;padding:18px 20px;text-align:left;color:inherit;z-index:2}.preview[hidden]{display:none}.preview strong{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;font-size:17px;line-height:1.45;font-weight:650}.excerpt{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;color:#abb1bb;font-size:15px;line-height:1.55;margin-top:8px;overflow-wrap:anywhere}.bottom{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);width:44px;height:44px;background:#fff;border:1px solid #e1e1e1;border-radius:50%;box-shadow:0 3px 12px #0000000a;display:grid;place-items:center}.bottom svg{width:16px;stroke:#15171c;fill:none;stroke-width:1.6}.note{font-size:12px;color:#777f8b;margin:14px 0;line-height:1.8}.narrow .scroll{padding-left:20px;padding-right:68px}.narrow .preview{padding:14px 16px}.narrow .preview strong{font-size:15px}.narrow .excerpt{font-size:13px}@media(max-width:600px){.page{padding:18px 12px}.head{align-items:start;flex-direction:column}.scroll{padding-left:20px;padding-right:68px}.preview{padding:14px 16px}.preview strong{font-size:15px}.excerpt{font-size:13px}}@media(prefers-reduced-motion:reduce){.scroll{scroll-behavior:auto}}
+/* 新参考图：左侧密集短横线由短到长，卡片位于导轨右侧。 */
+.rail{left:22px;right:auto;top:50%;bottom:auto;transform:translateY(-50%);width:52px;gap:0;align-items:flex-start}
+.tick{height:20px;width:52px;padding:0;display:flex;align-items:center;justify-content:flex-start}
+.tick span{height:4px;width:12px;border-radius:0;background:#d2d2d2}
+.tick:nth-child(5n+1) span{width:20px}.tick:nth-child(5n+2) span{width:28px}.tick:nth-child(5n+3) span{width:40px}
+.tick.current span,.tick.current:hover span{width:52px;background:#17191d}
+.preview{left:92px;right:auto;width:min(560px,calc(100% - 108px));border-radius:24px;padding:18px 17px;box-shadow:0 12px 24px #00000014}
+.preview strong{font-size:24px;line-height:1.4;font-weight:650}.excerpt{font-size:23px;line-height:1.8;color:#95979b;margin-top:12px}
+.scroll{padding-left:115px;padding-right:48px}.narrow .scroll{padding-left:80px;padding-right:20px}
+.narrow .preview{left:76px;width:calc(100% - 90px);padding:16px;border-radius:20px}.narrow .preview strong{font-size:20px}.narrow .excerpt{font-size:18px;line-height:1.65}
+@media(max-width:600px){.scroll{padding-left:80px;padding-right:20px}.preview{left:76px;width:calc(100% - 90px);padding:16px;border-radius:20px}.preview strong{font-size:20px}.excerpt{font-size:18px;line-height:1.65}}
+.frame.rail-right .rail{left:auto;right:22px;align-items:flex-end}.frame.rail-right .tick{justify-content:flex-end}
+.frame.rail-right .preview{left:auto;right:92px}.frame.rail-right .scroll{padding-left:48px;padding-right:115px}
+.frame.rail-right.narrow .preview{left:auto;right:76px}.frame.rail-right.narrow .scroll{padding-left:20px;padding-right:80px}
+@media(max-width:600px){.frame.rail-right .preview{left:auto;right:76px}.frame.rail-right .scroll{padding-left:20px;padding-right:80px}}
+</style>
+</head>
+<body><main class="page">
+<header class="head"><div><div class="eyebrow">PI WEB · INTERACTION PROTOTYPE</div><h1>会话导航 · 参考截图细化</h1><p>左侧密集短横线 + 大字号单轮卡片；示例文字为虚构内容。</p></div><div class="controls"><button id="leftRail" aria-pressed="true">方案一：左侧导轨</button><button id="rightRail" aria-pressed="false">方案二：右侧导轨</button><button id="desktop" aria-pressed="true">桌面</button><button id="narrow" aria-pressed="false">窄屏预览</button><button id="reset">重置示例</button></div></header>
+<section class="frame" id="frame" aria-label="会话导航原型">
+<div class="scroll" id="scroll"><div class="conversation" id="conversation"></div></div>
+<div class="native-scroll" aria-hidden="true"></div><div class="rail" id="rail" aria-label="会话轮次导航"></div>
+<button class="preview" id="preview" aria-label="跳转到预览的会话轮次"><strong id="title"></strong><span class="excerpt" id="excerpt"></span></button>
+<button class="bottom" id="bottom" aria-label="回到最新消息"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+</section><p class="note">交互假设：悬停或聚焦横线显示对应卡片；点击横线或卡片跳转。触屏可点按横线。截图未展示的交互不视为原产品事实；当前项目移动端原本不显示此导航。</p>
+</main>
+<script>
+const data=[
+ {q:'分析 ssh myclaw-lan，为啥登录不上？',a:'检查结果：以下为演示文本，展示如何通过会话导航快速定位较早的一轮回答。'},
+ {q:'可以登录了，分析服务器状态',a:'这里展示一段示例回答。系统状态、命令输出与服务器信息均不是实际检测结果。'},
+ {q:'列出可以安全清理的文件/文件夹',a:'示例：清理前应先确认文件用途与运行状态；此处不连接任何服务器。'},
+ {q:'还没其他的？',a:'示例内容：进一步分析后，再根据实际情况判断可清理范围。'},
+ {q:'当前项目是否能实现，通过会话，创建新会话？',a:'## 结论 要看你说的“通过会话创建新会话”是哪一层，答案不同： | 含义 | 当前是否支持 | |---|---| | 用户在会话界面点“新建会话”，或从当前会话 fork ...'},
+ {q:'好的，那 fork 会话在侧边栏的具体交互是怎样的？',a:'示例回答：从会话操作入口创建分支后，用户可以在侧边栏中切换。'}
+];
+// 添加明确标注的示例轮次，展示长会话的刻度密度。
+for(let i=0;i<12;i++) data.push({q:`示例会话轮次 ${i+7}`,a:'这是一段虚构的示例摘要，用于观察多轮会话中的导航密度和预览卡片。'});
+const $=id=>document.getElementById(id),rail=$('rail'),preview=$('preview'),scroll=$('scroll');let selected=4,timer;
+const conversation=$('conversation');data.forEach((item,i)=>{const section=document.createElement('article');section.className='turn';section.id='turn-'+i;const user=document.createElement('div');user.className='user';const bubble=document.createElement('div');bubble.className='bubble';bubble.textContent=item.q;user.append(bubble);const meta=document.createElement('div');meta.className='meta';meta.textContent='10/29 20:14   ▢';const answer=document.createElement('div');answer.className='answer';const p=document.createElement('p');p.textContent=item.a;answer.append(p);section.append(user,meta,answer);conversation.append(section);const tick=document.createElement('button');tick.className='tick';tick.setAttribute('aria-label',`预览第 ${i+1} 轮：${item.q}`);tick.innerHTML='<span></span>';tick.addEventListener('mouseenter',()=>show(i));tick.addEventListener('focus',()=>show(i));tick.addEventListener('click',()=>{show(i);jump(i)});rail.append(tick)});
+function show(i){clearTimeout(timer);selected=i;$('title').textContent=data[i].q;$('excerpt').textContent=data[i].a;[...rail.children].forEach((b,n)=>b.classList.toggle('current',n===i));const tick=rail.children[i],r=$('frame').getBoundingClientRect(),t=tick.getBoundingClientRect();preview.hidden=false;const h=preview.offsetHeight;preview.style.top=Math.max(h/2+10,Math.min(r.height-h/2-10,t.top+t.height/2-r.top))+'px'}
+function hide(){clearTimeout(timer);timer=setTimeout(()=>preview.hidden=true,300)}
+function jump(i){document.getElementById('turn-'+i).scrollIntoView({behavior:'smooth',block:'start'})}
+rail.addEventListener('mouseleave',hide);preview.addEventListener('mouseenter',()=>clearTimeout(timer));preview.addEventListener('mouseleave',hide);preview.addEventListener('click',()=>jump(selected));$('bottom').addEventListener('click',()=>scroll.scrollTo({top:scroll.scrollHeight,behavior:'smooth'}));
+$('leftRail').onclick=()=>{$('frame').classList.remove('rail-right');$('leftRail').setAttribute('aria-pressed','true');$('rightRail').setAttribute('aria-pressed','false');show(selected)};
+$('rightRail').onclick=()=>{$('frame').classList.add('rail-right');$('rightRail').setAttribute('aria-pressed','true');$('leftRail').setAttribute('aria-pressed','false');show(selected)};
+$('desktop').onclick=()=>{$('frame').classList.remove('narrow');$('desktop').setAttribute('aria-pressed','true');$('narrow').setAttribute('aria-pressed','false');show(selected)};$('narrow').onclick=()=>{$('frame').classList.add('narrow');$('narrow').setAttribute('aria-pressed','true');$('desktop').setAttribute('aria-pressed','false');show(selected)};$('reset').onclick=()=>{scroll.scrollTop=0;show(4)};
+show(4);
+</script></body></html>
