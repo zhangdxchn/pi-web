@@ -894,8 +894,6 @@ export const zhTWLocale: LocalePlugin = {
     "chatMinimap.earlierTurns": "更早的 {count} 輪尚未載入，點擊載入",
     "chatMinimap.locateAssistant": "定位助理訊息",
     "chatMinimap.toolCalls": "本輪 {count} 次工具呼叫",
-    "chatMinimap.lockPreview": "鎖定：懸停時不展開預覽",
-    "chatMinimap.unlockPreview": "解鎖懸停預覽",
     "i18n.close": "關閉",
     "i18n.copy": "複製",
     "i18n.copied": "已複製",
