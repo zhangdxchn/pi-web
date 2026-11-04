@@ -2,7 +2,7 @@
   position: absolute;
   left: 100%;
   z-index: 100;
-  width: min(380px, calc(100vw - 100px));
+  width: min(300px, calc(100vw - 80px));
   max-height: 220px;
   overflow: auto;
   overscroll-behavior: contain;
@@ -17,7 +17,7 @@
 .earlier {
   display: block;
   width: 100%;
-  padding: 7px 16px;
+  padding: 7px 12px;
   border: 0;
   border-bottom: 1px solid var(--border);
   background: transparent;
@@ -27,7 +27,7 @@
   cursor: pointer;
 }
 
-.turn { position: relative; padding: 12px 14px; }
+.turn { position: relative; padding: 10px 12px; }
 .number {
   display: flex;
   align-items: center;
