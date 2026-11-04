@@ -9,10 +9,10 @@ const { renderToStaticMarkup } = await jiti.import("react-dom/server");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
 const { TabBar } = await jiti.import("./TabBar.tsx");
 
-function renderTabBar(count) {
+function renderTabBar(count, onReorderTab) {
   const tabs = Array.from({ length: count }, (_, index) => ({ id: `t${index}`, label: `file-${index}.ts`, filePath: `/p/file-${index}.ts` }));
   return renderToStaticMarkup(React.createElement(I18nProvider, null,
-    React.createElement(TabBar, { tabs, activeTabId: "t0", onSelectTab() {}, onCloseTab() {} })));
+    React.createElement(TabBar, { tabs, activeTabId: "t0", onSelectTab() {}, onCloseTab() {}, onReorderTab })));
 }
 
 /** The inline style of every element with that role, as property maps. */
@@ -35,6 +35,11 @@ test("side chats and Git Graph have distinct tabs when open together", () => {
   assert.match(html, /role="tab" aria-label="Git Graph"/);
   assert.match(html, /M21 12a8 8 0 0 1-8 8/);
   assert.match(html, /<circle cx="6" cy="6" r="3"/);
+});
+
+test("right-panel tabs can be dragged when a reorder handler is provided", () => {
+  assert.match(renderTabBar(2, () => {}), /role="tab"[^>]*draggable="true"/);
+  assert.doesNotMatch(renderTabBar(2), /role="tab"[^>]*draggable="true"/);
 });
 
 test("overflowing tabs keep the whole bar: the strip has no scrollbar", () => {
