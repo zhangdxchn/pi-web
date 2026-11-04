@@ -1084,6 +1084,16 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
           <ExtensionCustomPanel key={extensionCustomUi.id} request={extensionCustomUi} waitingCount={waitingExtensionCustomUiCount} onInput={sendExtensionCustomInput} />
         )}
         {!isEmptyNew && <>
+        {isMobile || pendingScrollRestore ? null : (
+          <ChatMinimap
+            messages={messages}
+            getStreamingMessage={getStreamingMessage}
+            scrollContainer={scrollContainerRef}
+            messageRefs={messageRefs}
+            onRevealHistory={revealHistoryForMinimap}
+            turnsBefore={earlierTurnCount}
+          />
+        )}
         <div
           ref={scrollContainerRef}
           // The message list is the one place long output has to be dragged through,
@@ -1365,16 +1375,6 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
             </div>
           </div>
         </div>
-        {isMobile || pendingScrollRestore ? null : (
-          <ChatMinimap
-            messages={messages}
-            getStreamingMessage={getStreamingMessage}
-            scrollContainer={scrollContainerRef}
-            messageRefs={messageRefs}
-            onRevealHistory={revealHistoryForMinimap}
-            turnsBefore={earlierTurnCount}
-          />
-        )}
         </>}
       </div>
 

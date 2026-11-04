@@ -273,13 +273,17 @@ try {
     // The minimap numbers turns from the session's first, not the loaded page's (#791):
     // e0..e4949 hold 2475 user messages, so the turn asking text(4998) is 2500.
     const readMinimapTurn = async (screenshot) => {
-      const node = page.locator("[data-minimap-node-index='0']");
+      const node = page.locator("[data-minimap-node-index]").last();
       await node.waitFor();
       const rect = await node.boundingBox();
       assert.ok(rect);
       await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
       const preview = page.locator("[data-minimap-preview-box]");
       const turn = preview.locator("[data-minimap-preview-index]").filter({ hasText: text(4998) });
+      await turn.waitFor();
+      assert.equal(await preview.locator("[data-minimap-preview-index]").count(), 1, "The minimap shows only the hovered turn");
+      const cardRect = await preview.boundingBox();
+      assert.ok(cardRect && cardRect.x >= rect.x + rect.width, "The preview opens to the right of the left rail");
       const result = {
         number: await turn.locator("span[aria-hidden='true']").first().textContent(),
         earlier: await preview.locator("[data-minimap-preview-earlier]").textContent(),

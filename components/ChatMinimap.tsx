@@ -24,8 +24,8 @@ interface Props {
   turnsBefore: number;
 }
 
-const MINIMAP_WIDTH = 36;
-const MAX_NODE_GAP = 50;
+const MINIMAP_WIDTH = 52;
+const MAX_NODE_GAP = 20;
 const MINIMAP_PADDING = 12;
 // The lock button sits at the bottom of the rail (6px inset + 30px): nodes stop
 // above it so the last turn stays visible and clickable.
@@ -133,7 +133,8 @@ function remarkPreviewOutline() {
           },
         };
       });
-      tree.children = headings;
+      const firstParagraph = tree.children.find((node) => node.type === "paragraph");
+      tree.children = firstParagraph ? [...headings, firstParagraph] : headings;
       return;
     }
     const firstParagraph = tree.children.find((node) => node.type === "paragraph");
@@ -271,7 +272,7 @@ export const ChatMinimap = memo(function ChatMinimap({
     fillsHeight: false,
   });
   const previewBoxRef = useRef<HTMLDivElement>(null);
-  const previewItemRefs = useRef(new Map<number, HTMLDivElement>());
+  const [previewTop, setPreviewTop] = useState(0);
   const previewHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeNodeLockRef = useRef<{ index: number; until: number } | null>(null);
   const pendingNavigationRef = useRef<{
@@ -605,6 +606,7 @@ export const ChatMinimap = memo(function ChatMinimap({
     jumpToPointer(event.clientY, "smooth");
     const onMove = (moveEvent: MouseEvent) => {
       if (!draggingRef.current) return;
+      setMouseYRatio(Math.max(0, Math.min(1, (moveEvent.clientY - rect.top) / rect.height)));
       jumpToPointer(moveEvent.clientY, "auto");
     };
     const onUp = () => {
@@ -617,24 +619,14 @@ export const ChatMinimap = memo(function ChatMinimap({
   }, [findNearestNode, scrollToNode, showPreview, visible]);
 
   const nearestNode = mouseYRatio === null ? null : findNearestNode(mouseYRatio);
-  const nearestNodeIndex = nearestNode?.index ?? null;
-
   useEffect(() => {
-    if (!minimapHovered || nearestNodeIndex === null) return;
-    const previewBox = previewBoxRef.current;
-    const previewItem = previewItemRefs.current.get(nearestNodeIndex);
-    if (!previewBox || !previewItem) return;
-    const targetTop = previewItem.offsetTop
-      - (previewBox.clientHeight - previewItem.offsetHeight) / 2;
-    previewBox.scrollTop = Math.max(0, targetTop);
-  }, [allNodes, minimapHovered, nearestNodeIndex]);
+    const preview = previewBoxRef.current;
+    if (!minimapHovered || !nearestNode || !preview) return;
+    const height = preview.offsetHeight;
+    setPreviewTop(Math.max(0, Math.min(minimapHeight - height, nearestNode.topRatio * minimapHeight - height / 2)));
+  }, [minimapHovered, nearestNode, minimapHeight]);
 
   if (!visible) return null;
-
-  const lastNodeTop = positionedNodes.length > 0
-    ? positionedNodes[positionedNodes.length - 1].topRatio * minimapHeight
-    : MINIMAP_PADDING;
-  const railHeight = Math.max(1, lastNodeTop - MINIMAP_PADDING);
 
   return (
     <div
@@ -652,8 +644,7 @@ export const ChatMinimap = memo(function ChatMinimap({
         position: "relative",
         cursor: "pointer",
         userSelect: "none",
-        borderLeft: "1px solid var(--border)",
-        background: "var(--bg-panel)",
+        background: "var(--bg)",
         overflow: "visible",
       }}
     >
@@ -672,22 +663,10 @@ export const ChatMinimap = memo(function ChatMinimap({
           }}
         />
       )}
-      <div
-        style={{
-          position: "absolute",
-          left: "50%",
-          top: MINIMAP_PADDING,
-          height: railHeight,
-          width: 1,
-          background: "var(--border)",
-          transform: "translateX(-50%)",
-          zIndex: 0,
-        }}
-      />
-
       {positionedNodes.map((node) => {
         const isNearest = minimapHovered && nearestNode?.index === node.index;
         const isActive = activeIndex === node.index;
+        const distance = activeIndex === null ? 3 : Math.abs(activeIndex - node.index);
 
         return (
           <div
@@ -703,21 +682,18 @@ export const ChatMinimap = memo(function ChatMinimap({
               height: Math.max(1, nodeGap),
               display: "flex",
               alignItems: "center",
-              justifyContent: "center",
+              justifyContent: "flex-start",
+              paddingLeft: 8,
               pointerEvents: "none",
               zIndex: 2,
             }}
           >
             <div
               style={{
-                width: 8,
-                height: 8,
-                borderRadius: 2,
-                background: isActive ? "rgba(128,128,128,0.42)" : "rgba(128,128,128,0.16)",
-                border: `1.5px solid ${isActive ? "rgba(128,128,128,0.95)" : "rgba(128,128,128,0.58)"}`,
-                boxShadow: isActive ? "0 0 0 2px var(--bg-panel)" : "none",
-                transition: "transform 0.1s, background 0.1s",
-                transform: isNearest ? "scale(1.25)" : "scale(1)",
+                width: isActive ? 40 : isNearest ? 30 : Math.max(12, 40 - distance * 10),
+                height: 3,
+                background: isActive ? "var(--text)" : "var(--border)",
+                transition: "width 0.1s, background 0.1s",
               }}
             />
           </div>
@@ -757,10 +733,11 @@ export const ChatMinimap = memo(function ChatMinimap({
         </svg>
       </button>
 
-      {minimapHovered && allNodes.length > 0 && (
+      {minimapHovered && nearestNode && (
         <div
           ref={previewBoxRef}
           className={styles.preview}
+          style={{ top: previewTop }}
           data-minimap-preview-box=""
           onMouseEnter={showPreview}
           onMouseDown={(event) => event.stopPropagation()}
@@ -777,18 +754,12 @@ export const ChatMinimap = memo(function ChatMinimap({
               {t("chatMinimap.earlierTurns", { count: turnsBefore })}
             </button>
           )}
-          {allNodes.map((node) => {
-            const isLocated = nearestNodeIndex === node.index;
+          {[nearestNode].map((node) => {
             return (
               <div
                 key={node.index}
-                ref={(element) => {
-                  if (element) previewItemRefs.current.set(node.index, element);
-                  else previewItemRefs.current.delete(node.index);
-                }}
                 className={styles.turn}
                 data-minimap-preview-index={node.index}
-                data-located={isLocated ? "true" : undefined}
               >
                 <span className={styles.number}>
                   <span aria-hidden="true">
