@@ -2,13 +2,13 @@
   position: absolute;
   left: 100%;
   z-index: 100;
-  width: min(520px, calc(100vw - 100px));
+  width: min(380px, calc(100vw - 100px));
   max-height: 220px;
   overflow: auto;
   overscroll-behavior: contain;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 20px;
+  border-radius: 16px;
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
   cursor: default;
   user-select: text;
@@ -27,7 +27,7 @@
   cursor: pointer;
 }
 
-.turn { position: relative; padding: 14px 16px; }
+.turn { position: relative; padding: 12px 14px; }
 .number {
   display: flex;
   align-items: center;

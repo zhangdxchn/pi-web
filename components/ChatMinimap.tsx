@@ -23,7 +23,7 @@ interface Props {
   turnsBefore: number;
 }
 
-const MINIMAP_WIDTH = 92;
+const MINIMAP_WIDTH = 64;
 const MAX_NODE_GAP = 20;
 const MINIMAP_EDGE_PADDING = 48;
 const PREVIEW_HIDE_DELAY = 250;
@@ -645,14 +645,14 @@ export const ChatMinimap = memo(function ChatMinimap({
               display: "flex",
               alignItems: "center",
               justifyContent: "flex-start",
-              paddingLeft: 22,
+              paddingLeft: 8,
               pointerEvents: "none",
               zIndex: 2,
             }}
           >
             <div
               style={{
-                width: isActive ? 52 : isNearest ? 40 : Math.max(12, 52 - distance * 12),
+                width: isActive ? 44 : isNearest ? 34 : Math.max(10, 44 - distance * 10),
                 height: 4,
                 background: isActive ? "var(--text)" : "var(--border)",
                 transition: "width 0.1s, background 0.1s",
