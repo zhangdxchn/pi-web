@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>方向 3 · 浮动状态胶囊流 · Huashu Design</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --bg-panel: #fbfbfb;
+      --bg-hover: #f1f3f5;
+      --bg-selected: #e9ecef;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #475569;
+      --text-dim: #94a3b8;
+      --accent: #8b5cf6;
+      --top-bar-height: 40px;
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    [data-theme="dark"] {
+      --bg: #121316;
+      --bg-panel: #18191d;
+      --bg-hover: #22242a;
+      --bg-selected: #2b2e36;
+      --border: #2a2d35;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --accent: #a78bfa;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--font-sans); background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; font-size: 13px; }
+    .meta-bar { background: #090d16; color: #fff; padding: 8px 16px; display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; font-weight: 500; }
+    .layout { display: flex; flex: 1; min-height: 0; }
+    .sidebar { width: 240px; background: var(--bg-panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+    .center-chat { flex: 1; display: flex; flex-direction: column; background: var(--bg); border-right: 1px solid var(--border); }
+    .chat-header { height: var(--top-bar-height); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 12px; gap: 8px; position: relative; }
+    .session-title { display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-radius: 20px; font-weight: 500; font-size: 13px; background: var(--bg-selected); }
+    .btn-icon { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: none; background: transparent; color: var(--text-dim); border-radius: 4px; cursor: pointer; }
+    .btn-icon:hover { background: var(--bg-hover); color: var(--text); }
+    
+    /* Dynamic Island Capsule */
+    .capsule-pill { margin-left: auto; display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 20px; font-size: 11.5px; background: var(--bg-selected); color: var(--text); font-weight: 500; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+    
+    .chat-body { flex: 1; padding: 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+    .bubble { max-width: 80%; padding: 12px 16px; border-radius: 12px; font-size: 13px; line-height: 1.6; }
+    .bubble.user { align-self: flex-end; background: #e2f7e9; color: #0d381e; }
+    .bubble.assistant { align-self: flex-start; background: var(--bg-panel); border: 1px solid var(--border); color: var(--text); }
+    .right-panel { width: 520px; display: flex; flex-direction: column; background: var(--bg); }
+    .codex-tab-bar { height: var(--top-bar-height); display: flex; align-items: center; background: var(--bg-panel); border-bottom: 1px solid var(--border); padding: 0 8px; gap: 4px; }
+    .codex-tab { display: flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 16px; font-size: 12px; color: var(--text-muted); cursor: pointer; }
+    .codex-tab.active { background: var(--bg); color: var(--accent); font-weight: 500; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+    .panel-content { flex: 1; display: flex; flex-direction: column; background: var(--bg); padding: 16px; align-items: center; justify-content: center; color: var(--text-dim); }
+  </style>
+</head>
+<body>
+  <div class="meta-bar">
+    <div>方向 3 · 浮动状态胶囊流 (Floating Dynamic Capsule)</div>
+    <button onclick="document.documentElement.setAttribute('data-theme', document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark')" style="background: #1e293b; color: #fff; border: 1px solid #334155; padding: 4px 10px; border-radius: 4px; cursor: pointer;">🌓 主题切换</button>
+  </div>
+  <div class="layout">
+    <div class="sidebar">
+      <div style="height: var(--top-bar-height); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 12px; font-weight: 600;">Codex ⌵</div>
+      <div style="padding: 12px; color: var(--text-muted); font-size: 12px;">📁 部署到 msj_a</div>
+    </div>
+    <div class="center-chat">
+      <div class="chat-header">
+        <button class="btn-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg></button>
+        <div class="session-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8a2 2 0 0 1 2-2h3.4l1.9 1.9H19a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+          <span>部署到 msj_a</span>
+        </div>
+        <button class="btn-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="1.5"/><circle cx="6" cy="12" r="1.5"/><circle cx="18" cy="12" r="1.5"/></svg></button>
+
+        <!-- Dynamic Island Capsule -->
+        <div class="capsule-pill">
+          <span>🪣 13% 上下文</span>
+          <span style="opacity: 0.4;">|</span>
+          <span style="font-family: var(--font-mono); font-size: 11px;">464k tokens</span>
+        </div>
+      </div>
+      <div class="chat-body">
+        <div class="bubble assistant">动态胶囊模式：软性微圆角设计，给对话区域创造最大净空。</div>
+        <div class="bubble user">完成部署到msj_a</div>
+      </div>
+    </div>
+    <div class="right-panel">
+      <div class="codex-tab-bar">
+        <div class="codex-tab active">
+          <span>zhangdx@DX-MBP:~/Workspaces...</span>
+        </div>
+        <div class="codex-tab">
+          <span>New tab</span>
+        </div>
+        <button class="btn-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+      </div>
+      <div class="panel-content">
+        <div>Live Workspace Environment Ready</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
