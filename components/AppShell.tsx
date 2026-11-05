@@ -31,6 +31,7 @@ import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useAudio } from "@/hooks/useAudio";
 import { copyText } from "@/lib/clipboard";
 import { getFileName } from "@/lib/file-paths";
+import { TerminalIcon } from "./SidebarIcons";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
 import {
   claimExtensionAttentionNotification,
@@ -563,6 +564,30 @@ export function AppShell() {
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
   const fileWorkspaceStatesRef = useRef(new Map<string, ParkedFileWorkspace>());
+
+  const panelPlusMenuRef = useRef<HTMLDivElement>(null);
+  const [panelPlusMenuOpen, setPanelPlusMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!panelPlusMenuOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (panelPlusMenuRef.current && !panelPlusMenuRef.current.contains(target)) {
+        setPanelPlusMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setPanelPlusMenuOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [panelPlusMenuOpen]);
   // Bumped on every workspace switch. The active viewer reports its state as
   // it unmounts, tagged with the generation it rendered in, so the report of a
   // tab just parked goes to its workspace, not to a same-path tab restored.
@@ -2945,6 +2970,87 @@ export function AppShell() {
               onReorderTab={(source, target, after) => setPanelTabOrder(movePanelTab(panelTabs.map((tab) => tab.id), source, target, after))}
             />
           </div>
+          <div ref={panelPlusMenuRef} style={{ position: "relative", display: "flex", alignItems: "center", height: "100%" }}>
+            <button
+              type="button"
+              onClick={() => setPanelPlusMenuOpen((open) => !open)}
+              title={translate("terminal.open")}
+              aria-label={translate("terminal.open")}
+              aria-expanded={panelPlusMenuOpen}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: TOP_BAR_ICON_BUTTON_SIZE,
+                height: TOP_BAR_ICON_BUTTON_SIZE,
+                padding: 0,
+                background: panelPlusMenuOpen ? "var(--bg-selected)" : "none",
+                border: "none",
+                borderLeft: "1px solid var(--border)",
+                color: panelPlusMenuOpen ? "var(--accent)" : "var(--text)",
+                cursor: "pointer",
+                flexShrink: 0,
+                transition: "color 0.12s, background 0.12s",
+              }}
+              onMouseEnter={(event) => { event.currentTarget.style.color = "var(--accent)"; }}
+              onMouseLeave={(event) => { event.currentTarget.style.color = panelPlusMenuOpen ? "var(--accent)" : "var(--text)"; }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+            {panelPlusMenuOpen && (
+              <div
+                role="menu"
+                style={{
+                  position: "absolute",
+                  top: "calc(100% + 4px)",
+                  right: 0,
+                  width: 200,
+                  background: "var(--bg)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  boxShadow: "0 10px 30px rgba(0,0,0,0.14)",
+                  padding: 6,
+                  zIndex: 260,
+                }}
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    if (activeCwd) {
+                      const tab = newTerminalTab(activeCwd);
+                      setTerminalTabs((tabs) => [...tabs, tab]);
+                      setActiveFileTabId(tab.id);
+                      setRightPanelOpen(true);
+                    }
+                    setPanelPlusMenuOpen(false);
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    width: "100%",
+                    padding: "7px 10px",
+                    background: "none",
+                    border: "none",
+                    borderRadius: 5,
+                    color: "var(--text)",
+                    fontSize: 12,
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+                >
+                  <span style={{ display: "inline-flex", color: "var(--text-muted)", flexShrink: 0 }}><TerminalIcon size={14} /></span>
+                  <span>{translate("terminal.open")}</span>
+                </button>
+              </div>
+            )}
+          </div>
           <button
             type="button"
             className="file-panel-expand-button"
@@ -2976,8 +3082,9 @@ export function AppShell() {
             onMouseEnter={(event) => { event.currentTarget.style.color = "var(--accent)"; }}
             onMouseLeave={(event) => { event.currentTarget.style.color = "var(--text)"; }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="15" y1="3" x2="15" y2="21" />
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
         </div>
