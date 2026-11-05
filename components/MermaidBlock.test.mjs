@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, {
@@ -8,7 +11,7 @@ const jiti = createJiti(import.meta.url, {
 });
 const React = await jiti.import("react");
 const { renderToStaticMarkup } = await jiti.import("react-dom/server");
-const { MermaidBlock, CodeBlock, downloadMermaidSvg } = await jiti.import("./MermaidBlock.tsx");
+const { MermaidBlock, CodeBlock, downloadMermaidSvg, DiagramZoomDialog } = await jiti.import("./MermaidBlock.tsx");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
 const { loadPrismLanguages } = await jiti.import("@/lib/prism-languages");
 
@@ -199,4 +202,46 @@ test("downloadMermaidSvg downloads XML-serialized SVG and releases its URL", asy
     URL.createObjectURL = originalCreateObjectURL;
     URL.revokeObjectURL = originalRevokeObjectURL;
   }
+});
+
+test("DiagramZoomDialog renders accessible dialog with toolbar, stepper, and close button", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(
+      I18nProvider,
+      null,
+      React.createElement(
+        DiagramZoomDialog,
+        { title: "Test Diagram", label: "Diagram Viewer", onClose: () => {} },
+        React.createElement("svg", { id: "test-svg" }),
+      ),
+    ),
+  );
+
+  assert.match(html, /<dialog\b[^>]*class="mermaid-zoom-dialog"/);
+  assert.match(html, /aria-label="Diagram Viewer"/);
+  assert.match(html, /class="mermaid-zoom-toolbar"/);
+  assert.match(html, /class="mermaid-zoom-title">Test Diagram<\/span>/);
+  assert.match(html, /class="mermaid-zoom-stepper"/);
+  assert.match(html, /class="mermaid-zoom-icon-button"[^>]*title="Close"/);
+  assert.match(html, /class="mermaid-zoom-viewport"/);
+  assert.match(html, /<svg id="test-svg"/);
+});
+
+test("globals.css protects Mermaid zoom toolbar and viewport against mobile status bar with safe-area insets", () => {
+  const cssPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../app/globals.css");
+  const css = fs.readFileSync(cssPath, "utf-8");
+
+  // Toolbar must pad its top and sides for notch and status bars
+  assert.match(css, /\.mermaid-zoom-toolbar\s*\{[^}]*env\(safe-area-inset-top\)/);
+  assert.match(css, /\.mermaid-zoom-toolbar\s*\{[^}]*env\(safe-area-inset-left\)/);
+  assert.match(css, /\.mermaid-zoom-toolbar\s*\{[^}]*env\(safe-area-inset-right\)/);
+
+  // Viewport must pad its bottom and sides for home indicators
+  assert.match(css, /\.mermaid-zoom-viewport\s*\{[^}]*env\(safe-area-inset-bottom\)/);
+  assert.match(css, /\.mermaid-zoom-viewport\s*\{[^}]*env\(safe-area-inset-left\)/);
+  assert.match(css, /\.mermaid-zoom-viewport\s*\{[^}]*env\(safe-area-inset-right\)/);
+
+  // Small screens and coarse pointers must retain safe-area padding and touch target sizes
+  assert.match(css, /@media\s*\(max-width:\s*480px\)\s*\{[\s\S]*?\.mermaid-zoom-toolbar\s*\{[^}]*env\(safe-area-inset-top\)/);
+  assert.match(css, /@media\s*\(pointer:\s*coarse\)\s*\{[\s\S]*?\.mermaid-zoom-icon-button/);
 });

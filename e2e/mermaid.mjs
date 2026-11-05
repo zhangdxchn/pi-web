@@ -176,6 +176,22 @@ export async function checkMermaid(page, base, sessionId) {
   assert.ok(layout.buttons.length >= 3);
   assert.ok(layout.labelRight <= layout.buttons[0].left, "mobile buttons must not overlap the language label");
   assert.ok(layout.buttons.every((button) => button.left >= layout.left && button.right <= layout.right), "mobile buttons must stay inside the code block");
+
+  // On a mobile screen, the zoom dialog toolbar must be visible, properly positioned,
+  // and closeable back to the chat window.
+  await blocks.nth(0).getByRole("button", { name: "Open diagram viewer" }).click();
+  const mobileDialog = page.getByRole("dialog", { name: "Mermaid diagram viewer" });
+  await mobileDialog.locator("svg").first().waitFor();
+  const closeButton = mobileDialog.getByRole("button", { name: "Close", exact: true });
+  await closeButton.waitFor({ state: "visible" });
+  const toolbar = mobileDialog.locator(".mermaid-zoom-toolbar");
+  const toolbarBox = await toolbar.boundingBox();
+  const closeBox = await closeButton.boundingBox();
+  assert.ok(toolbarBox && closeBox);
+  assert.ok(closeBox.y >= toolbarBox.y, "close button must be within or below toolbar top");
+  await closeButton.click();
+  await mobileDialog.waitFor({ state: "hidden" });
+
   await page.setViewportSize({ width: 1280, height: 800 });
   console.log("PASS: Mermaid errors, source copy, zoom, SVG download, themes, translations, and mobile controls");
 }
