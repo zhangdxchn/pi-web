@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Huashu Design · Pi Web × Codex 重构评审矩阵</title>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: #141c2e;
+      --border: #23314d;
+      --text: #f8fafc;
+      --text-dim: #94a3b8;
+      --accent: #38bdf8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 28px; min-height: 100vh; }
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 10px; }
+    p.subtitle { color: var(--text-dim); font-size: 13.5px; margin-bottom: 28px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 24px; }
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; }
+    .card-preview { height: 220px; background: #fff; overflow: hidden; position: relative; border-bottom: 1px solid var(--border); }
+    .card-preview iframe { width: 200%; height: 200%; transform: scale(0.5); transform-origin: top left; border: none; pointer-events: none; }
+    .card-content { padding: 18px; flex: 1; display: flex; flex-direction: column; gap: 10px; }
+    .badge { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 600; display: inline-block; }
+    .badge.main { background: #2563eb; color: #fff; }
+    .badge.alt { background: #059669; color: #fff; }
+    .badge.soft { background: #7c3aed; color: #fff; }
+    .title { font-size: 16px; font-weight: 600; margin-top: 2px; }
+    .desc { font-size: 12.5px; color: var(--text-dim); line-height: 1.6; flex: 1; }
+    .link-btn { margin-top: 12px; padding: 9px 14px; background: #1e293b; color: #fff; text-decoration: none; border-radius: 6px; font-size: 12.5px; text-align: center; font-weight: 500; transition: background 0.15s; }
+    .link-btn:hover { background: #334155; }
+  </style>
+</head>
+<body>
+  <h1>Pi Web × Codex 风格全景重构 · 3 方向评审矩阵</h1>
+  <p class="subtitle">重构截图一中臃肿的 5 个大按钮顶栏，全面对齐截图二 Codex 的「📁 标题 + ... + 标签栏 + Omnibar」顶级交互心智</p>
+
+  <div class="grid">
+    <!-- Direction 1 -->
+    <div class="card">
+      <div class="card-preview">
+        <iframe src="dir-1.html"></iframe>
+      </div>
+      <div class="card-content">
+        <div><span class="badge main">主选推荐 · 方向 ①</span></div>
+        <div class="title">Codex 纯净原生流 (Pure Codex Minimalist)</div>
+        <div class="desc">1:1 复刻 Codex。将截图一的 5 个大按钮收纳进「...」更多菜单，会话标题「📁 部署到 msj_a」成为视觉中心；右侧面板采用标准 Chrome/Codex TabBar + 二级 Omnibar 地址栏。</div>
+        <a href="dir-1.html" class="link-btn">打开独立全屏原型 ↗</a>
+      </div>
+    </div>
+
+    <!-- Direction 2 -->
+    <div class="card">
+      <div class="card-preview">
+        <iframe src="dir-2.html"></iframe>
+      </div>
+      <div class="card-content">
+        <div><span class="badge alt">高信息密度 · 方向 ②</span></div>
+        <div class="title">工程微徽章分层流 (Engineering Tiered Architecture)</div>
+        <div class="desc">在保留 Codex 会话标题主焦点的同时，在标题旁外露极简 20px 芯片微徽章（Agents · 2, Tools · 8），低频历史操作折叠入菜单，兼顾干净视野与实时状态感知。</div>
+        <a href="dir-2.html" class="link-btn">打开独立全屏原型 ↗</a>
+      </div>
+    </div>
+
+    <!-- Direction 3 -->
+    <div class="card">
+      <div class="card-preview">
+        <iframe src="dir-3.html"></iframe>
+      </div>
+      <div class="card-content">
+        <div><span class="badge soft">现代美学 · 方向 ③</span></div>
+        <div class="title">浮动状态胶囊流 (Floating Dynamic Capsule)</div>
+        <div class="desc">现代化动态岛设计。Token 消耗与上下文容量封装为精致的悬浮微胶囊，为对话区创造最大净空视野，标签栏与窗口按钮具有平滑的动态反馈。</div>
+        <a href="dir-3.html" class="link-btn">打开独立全屏原型 ↗</a>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top: 36px; text-align: center;">
+    <a href="index.html" style="display: inline-block; padding: 12px 28px; background: #2563eb; color: #fff; font-size: 14px; font-weight: 600; text-decoration: none; border-radius: 8px; box-shadow: 0 4px 14px rgba(37,99,235,0.3);">👉 打开综合交互试验台 (可实时切换体验 3 种方向) ↗</a>
+  </div>
+</body>
+</html>
