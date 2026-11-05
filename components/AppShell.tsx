@@ -33,6 +33,7 @@ import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useAudio } from "@/hooks/useAudio";
 import { copyText } from "@/lib/clipboard";
 import { getFileName } from "@/lib/file-paths";
+import { FolderIcon, TerminalIcon, GitGraphIcon } from "./SidebarIcons";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
 import {
   claimExtensionAttentionNotification,
@@ -565,6 +566,36 @@ export function AppShell() {
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
   const fileWorkspaceStatesRef = useRef(new Map<string, ParkedFileWorkspace>());
+
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const panelPlusMenuRef = useRef<HTMLDivElement>(null);
+  const [panelPlusMenuOpen, setPanelPlusMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!moreMenuOpen && !panelPlusMenuOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (moreMenuOpen && moreMenuRef.current && !moreMenuRef.current.contains(target)) {
+        setMoreMenuOpen(false);
+      }
+      if (panelPlusMenuOpen && panelPlusMenuRef.current && !panelPlusMenuRef.current.contains(target)) {
+        setPanelPlusMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMoreMenuOpen(false);
+        setPanelPlusMenuOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [moreMenuOpen, panelPlusMenuOpen]);
   // Bumped on every workspace switch. The active viewer reports its state as
   // it unmounts, tagged with the generation it rendered in, so the report of a
   // tab just parked goes to its workspace, not to a same-path tab restored.
@@ -1627,6 +1658,13 @@ export function AppShell() {
   const activeAgentTab = agentTabs.find((tab) => `agent:${tab.sessionId}` === activeFileTabId) ?? null;
   const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
   const windowTitle = activeCwdName ? `${activeCwdName} - Pi Web` : "Pi Web";
+  const sessionDisplayName = useMemo(() => {
+    if (!showChat) return null;
+    if (selectedSession) {
+      return selectedSession.name || selectedSession.firstMessage?.slice(0, 50) || selectedSession.id.slice(0, 12);
+    }
+    return activeCwdName || translate("chat.newSession");
+  }, [activeCwdName, selectedSession, showChat, translate]);
 
   useEffect(() => {
     const syncWindowTitle = () => {
@@ -2295,6 +2333,374 @@ export function AppShell() {
     );
   };
 
+  const renderAutoNameTitleButton = () => {
+    if (!showChat) return null;
+    const hasMessages = Boolean(
+      selectedSession
+      && ((sessionStats?.userMessages ?? 0) > 0 || selectedSession.messageCount > 0),
+    );
+    const disabled = !selectedSession || selectedSession.transient || !hasMessages || autoNameStatus.kind === "naming";
+    const isSuccess = autoNameStatus.kind === "success";
+    const isError = autoNameStatus.kind === "error";
+    const label = autoNameStatus.kind === "naming"
+      ? translate("title.generating")
+      : isSuccess
+        ? translate("title.updated")
+        : isError
+          ? translate("title.failed")
+          : translate("title.generate");
+    const title = !selectedSession || selectedSession.transient
+      ? translate("title.unsaved")
+      : !hasMessages
+        ? translate("title.noMessages")
+        : isError
+          ? autoNameStatus.message
+          : translate("title.generateSession");
+
+    return (
+      <button
+        type="button"
+        onClick={() => void handleAutoName()}
+        disabled={disabled}
+        title={title}
+        aria-label={label}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 26,
+          height: 26,
+          padding: 0,
+          background: "none",
+          border: "none",
+          borderRadius: 4,
+          color: isError ? "#dc2626" : isSuccess ? "var(--accent)" : disabled ? "var(--text-dim)" : "var(--text-muted)",
+          cursor: disabled ? "not-allowed" : "pointer",
+          opacity: disabled && autoNameStatus.kind !== "naming" ? 0.35 : 1,
+          flexShrink: 0,
+          transition: "color 0.1s, background 0.1s, opacity 0.1s",
+        }}
+        onMouseEnter={(e) => {
+          if (disabled) return;
+          e.currentTarget.style.color = isError ? "#dc2626" : "var(--text)";
+          e.currentTarget.style.background = "var(--bg-hover)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.color = isError ? "#dc2626" : isSuccess ? "var(--accent)" : disabled ? "var(--text-dim)" : "var(--text-muted)";
+          e.currentTarget.style.background = "none";
+        }}
+      >
+        {autoNameStatus.kind === "naming" ? (
+          <svg className="animate-spin motion-reduce:animate-none" width={13} height={13} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" opacity="0.25" />
+            <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        ) : isSuccess ? (
+          <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        ) : (
+          <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="m15 4 5 5L7 22l-5-5Z" />
+            <path d="m14 5 5 5" />
+            <path d="M6 4V2M5 3H3M19 19v3M17.5 20.5h3" />
+          </svg>
+        )}
+      </button>
+    );
+  };
+
+  const renderCodexMoreActions = () => {
+    if (!showChat) return null;
+
+    return (
+      <div ref={moreMenuRef} style={{ position: "relative", display: "flex", alignItems: "center", height: "100%" }}>
+        <button
+          type="button"
+          onClick={() => setMoreMenuOpen((open) => !open)}
+          title={translate("chat.moreControls")}
+          aria-label={translate("chat.moreControls")}
+          aria-expanded={moreMenuOpen}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: TOP_BAR_ICON_BUTTON_SIZE,
+            height: TOP_BAR_ICON_BUTTON_SIZE,
+            padding: 0,
+            background: moreMenuOpen ? "var(--bg-selected)" : "none",
+            border: "none",
+            borderLeft: "1px solid var(--border)",
+            color: moreMenuOpen ? "var(--text)" : "var(--text-muted)",
+            cursor: "pointer",
+            flexShrink: 0,
+            transition: "color 0.12s, background 0.12s",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = moreMenuOpen ? "var(--text)" : "var(--text-muted)"; }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="19" cy="12" r="1.5" />
+          </svg>
+        </button>
+
+        {moreMenuOpen && (
+          <div
+            role="menu"
+            style={{
+              position: "absolute",
+              top: "calc(100% + 4px)",
+              right: 0,
+              width: 220,
+              background: "var(--bg)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              boxShadow: "0 10px 30px rgba(0,0,0,0.14)",
+              padding: 6,
+              zIndex: 260,
+            }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!selectedSession}
+              onClick={() => {
+                handleViewFullHistory();
+                setMoreMenuOpen(false);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                width: "100%",
+                padding: "7px 10px",
+                background: "none",
+                border: "none",
+                borderRadius: 5,
+                color: "var(--text)",
+                fontSize: 12,
+                cursor: selectedSession ? "pointer" : "not-allowed",
+                opacity: selectedSession ? 1 : 0.45,
+                textAlign: "left",
+              }}
+              onMouseEnter={(e) => { if (selectedSession) e.currentTarget.style.background = "var(--bg-hover)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: "var(--text-muted)" }}>
+                <path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l3 2" />
+              </svg>
+              <span>{translate("history.label")}</span>
+            </button>
+
+            <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
+
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                handleSystemInfoToggle("system", false);
+                setMoreMenuOpen(false);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                width: "100%",
+                padding: "7px 10px",
+                background: "none",
+                border: "none",
+                borderRadius: 5,
+                color: "var(--text)",
+                fontSize: 12,
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: "var(--text-muted)" }}>
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" />
+              </svg>
+              <span>{translate("system.label")}</span>
+            </button>
+
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                handleSystemInfoToggle("tools", false);
+                setMoreMenuOpen(false);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                width: "100%",
+                padding: "7px 10px",
+                background: "none",
+                border: "none",
+                borderRadius: 5,
+                color: "var(--text)",
+                fontSize: 12,
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: "var(--text-muted)" }}>
+                <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+              </svg>
+              <span>{translate("tools.title")}</span>
+            </button>
+
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                toggleTopPanel("agents");
+                setMoreMenuOpen(false);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                width: "100%",
+                padding: "7px 10px",
+                background: "none",
+                border: "none",
+                borderRadius: 5,
+                color: "var(--text)",
+                fontSize: 12,
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: "var(--text-muted)" }}>
+                <rect x="5" y="7" width="14" height="11" rx="2" /><path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
+              </svg>
+              <span>{translate("subagent.agentsTitle")}</span>
+            </button>
+
+            {sessionHasBranches && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  toggleTopPanel("branches");
+                  setMoreMenuOpen(false);
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  width: "100%",
+                  padding: "7px 10px",
+                  background: "none",
+                  border: "none",
+                  borderRadius: 5,
+                  color: "var(--text)",
+                  fontSize: 12,
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: "var(--accent)" }}>
+                  <line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" />
+                </svg>
+                <span>{translate("i18n.branches")}</span>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderClosedPanelTrigger = () => {
+    if (rightPanelOpen || isMobile) return null;
+    return (
+      <div style={{ display: "flex", alignItems: "center", height: "100%", borderLeft: "1px solid var(--border)", padding: "0 6px" }}>
+        {panelTabs.length > 0 ? (
+          <button
+            type="button"
+            onClick={handleRightPanelToggle}
+            title={`${translate("files.showPanel")} (${panelTabs.length})`}
+            aria-label={`${translate("files.showPanel")} (${panelTabs.length})`}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 22,
+              height: 22,
+              borderRadius: 5,
+              border: "1.5px solid var(--text-muted)",
+              background: "transparent",
+              color: "var(--text)",
+              fontSize: 11,
+              fontWeight: 600,
+              fontFamily: "var(--font-sans)",
+              cursor: "pointer",
+              transition: "border-color 0.12s, color 0.12s",
+              flexShrink: 0,
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = "var(--accent)";
+              e.currentTarget.style.color = "var(--accent)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = "var(--text-muted)";
+              e.currentTarget.style.color = "var(--text)";
+            }}
+          >
+            {panelTabs.length}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              if (activeCwd) handleOpenTerminal(activeCwd);
+              else setRightPanelOpen(true);
+            }}
+            title={translate("terminal.open")}
+            aria-label={translate("terminal.open")}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 26,
+              height: 26,
+              borderRadius: 5,
+              border: "none",
+              background: "transparent",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+              transition: "color 0.12s, background 0.12s",
+              flexShrink: 0,
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = "var(--text)";
+              e.currentTarget.style.background = "var(--bg-hover)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = "var(--text-muted)";
+              e.currentTarget.style.background = "transparent";
+            }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
+        )}
+      </div>
+    );
+  };
+
   const renderMainFileToggle = (mobile: boolean) => {
     const covered = mobile && isNarrowMobile && mobileToolbarMoreOpen;
     return (
@@ -2497,6 +2903,36 @@ export function AppShell() {
               </svg>
             )}
           </button>
+          {sessionDisplayName && !isMobile && (
+            <>
+              <div style={{ width: 1, height: 16, background: "var(--border)", margin: "0 8px", flexShrink: 0 }} />
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "4px 8px",
+                  borderRadius: 6,
+                  color: "var(--text)",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  userSelect: "none",
+                  minWidth: 0,
+                  maxWidth: 360,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+                title={sessionDisplayName}
+              >
+                <span style={{ display: "inline-flex", color: "var(--text-muted)", flexShrink: 0 }}><FolderIcon size={14} /></span>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {sessionDisplayName}
+                </span>
+              </div>
+              {renderAutoNameTitleButton()}
+            </>
+          )}
           {isMobile && (
             <div
               ref={mobileToolbarRef}
@@ -2580,12 +3016,12 @@ export function AppShell() {
           {!isMobile && (
             <>
               {renderProjectTrustWarning(false)}
-              {renderChatToolbarActions(false)}
               {renderDebugButton(false)}
               {renderSessionStatsButton(false)}
+              {renderCodexMoreActions()}
+              {renderClosedPanelTrigger()}
             </>
           )}
-          {!isMobile && renderMainFileToggle(false)}
           {isMobile && sessionHasBranches && (
             <BranchNavigator
               tree={branchTree}
@@ -2986,6 +3422,119 @@ export function AppShell() {
               onReorderTab={(source, target, after) => setPanelTabOrder(movePanelTab(panelTabs.map((tab) => tab.id), source, target, after))}
             />
           </div>
+          <div ref={panelPlusMenuRef} style={{ position: "relative", display: "flex", alignItems: "center", height: "100%" }}>
+            <button
+              type="button"
+              onClick={() => setPanelPlusMenuOpen((open) => !open)}
+              title={translate("terminal.open")}
+              aria-label={translate("terminal.open")}
+              aria-expanded={panelPlusMenuOpen}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: TOP_BAR_ICON_BUTTON_SIZE,
+                height: TOP_BAR_ICON_BUTTON_SIZE,
+                padding: 0,
+                background: panelPlusMenuOpen ? "var(--bg-selected)" : "none",
+                border: "none",
+                borderLeft: "1px solid var(--border)",
+                color: panelPlusMenuOpen ? "var(--accent)" : "var(--text)",
+                cursor: "pointer",
+                flexShrink: 0,
+                transition: "color 0.12s, background 0.12s",
+              }}
+              onMouseEnter={(event) => { event.currentTarget.style.color = "var(--accent)"; }}
+              onMouseLeave={(event) => { event.currentTarget.style.color = panelPlusMenuOpen ? "var(--accent)" : "var(--text)"; }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+            {panelPlusMenuOpen && (
+              <div
+                role="menu"
+                style={{
+                  position: "absolute",
+                  top: "calc(100% + 4px)",
+                  right: 0,
+                  width: 200,
+                  background: "var(--bg)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  boxShadow: "0 10px 30px rgba(0,0,0,0.14)",
+                  padding: 6,
+                  zIndex: 260,
+                }}
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    if (activeCwd) {
+                      const tab = newTerminalTab(activeCwd);
+                      setTerminalTabs((tabs) => [...tabs, tab]);
+                      setActiveFileTabId(tab.id);
+                      setRightPanelOpen(true);
+                    }
+                    setPanelPlusMenuOpen(false);
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    width: "100%",
+                    padding: "7px 10px",
+                    background: "none",
+                    border: "none",
+                    borderRadius: 5,
+                    color: "var(--text)",
+                    fontSize: 12,
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+                >
+                  <span style={{ display: "inline-flex", color: "var(--text-muted)", flexShrink: 0 }}><TerminalIcon size={14} /></span>
+                  <span>{translate("terminal.open")}</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={!activeCwd}
+                  onClick={() => {
+                    if (activeCwd) {
+                      setRightPanelOpen(true);
+                      setActiveFileTabId("git-graph");
+                    }
+                    setPanelPlusMenuOpen(false);
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    width: "100%",
+                    padding: "7px 10px",
+                    background: "none",
+                    border: "none",
+                    borderRadius: 5,
+                    color: "var(--text)",
+                    fontSize: 12,
+                    cursor: activeCwd ? "pointer" : "not-allowed",
+                    opacity: activeCwd ? 1 : 0.45,
+                    textAlign: "left",
+                  }}
+                  onMouseEnter={(e) => { if (activeCwd) e.currentTarget.style.background = "var(--bg-hover)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+                >
+                  <span style={{ display: "inline-flex", color: "var(--text-muted)", flexShrink: 0 }}><GitGraphIcon size={14} /></span>
+                  <span>{translate("gitGraph.title")}</span>
+                </button>
+              </div>
+            )}
+          </div>
           <button
             type="button"
             className="file-panel-expand-button"
@@ -3017,8 +3566,9 @@ export function AppShell() {
             onMouseEnter={(event) => { event.currentTarget.style.color = "var(--accent)"; }}
             onMouseLeave={(event) => { event.currentTarget.style.color = "var(--text)"; }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="15" y1="3" x2="15" y2="21" />
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
         </div>
