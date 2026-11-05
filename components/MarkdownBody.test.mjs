@@ -491,3 +491,16 @@ test("shows a user message's HTML as the text typed, like pi's TUI", () => {
   assert.match(mixed, /&lt;p&gt;code&lt;\/p&gt;/);
   assert.match(renderMarkdown("normal <kbd>Ctrl</kbd>"), /<kbd>Ctrl<\/kbd>/);
 });
+
+test("renders session deeplinks as interactive session pills with resolved names", () => {
+  const html = renderMarkdown("请参考 [修复登录](?session=01a1aa7f-30e4) 和 [其他](pi://sessions/3f9a12bc)", {
+    onResolveSessionTitle(id) {
+      if (id === "01a1aa7f-30e4") return "修复登录问题";
+      if (id === "3f9a12bc") return "终端按键优化";
+      return undefined;
+    },
+  });
+  assert.match(html, /class="session-link-pill"/);
+  assert.match(html, /修复登录问题/);
+  assert.match(html, /终端按键优化/);
+});

@@ -25,6 +25,7 @@ import {
 import { getMarkdownListContinuation } from "@/lib/markdown-list-continuation";
 import { quoteSeparator } from "@/lib/quoted-selection";
 import { isBareMcpCommand, isBuiltinMcpCommand } from "@/lib/mcp-command";
+import { replaceSessionDeepLinksWithMarkdown } from "@/lib/session-links";
 import { FolderIcon, getFileIcon } from "./FileIcons";
 import { ImagePreview } from "./ImagePreview";
 import { DismissButton } from "./DismissButton";
@@ -109,6 +110,8 @@ interface Props {
   cwd?: string | null;
   /** Files picked with the attach button, handled like files dropped onto the chat. Without it the button takes images only. */
   onAttachFiles?: (files: File[]) => void;
+  /** Resolves the human-readable title for a linked session ID. */
+  onResolveSessionTitle?: (sessionId: string) => string | undefined;
 }
 
 export interface ChatInputHandle {
@@ -704,6 +707,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   draftKey,
   cwd,
   onAttachFiles,
+  onResolveSessionTitle,
   compact = false,
 }: Props, ref) {
   const { t } = useI18n();
@@ -1580,6 +1584,23 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     const html = e.clipboardData.getData("text/html");
     const text = e.clipboardData.getData("text/plain");
     if (text) {
+      const sessionMarkdown = replaceSessionDeepLinksWithMarkdown(text, onResolveSessionTitle);
+      if (sessionMarkdown !== null) {
+        e.preventDefault();
+        const ta = e.currentTarget;
+        const start = ta.selectionStart;
+        const nextValue = ta.value.slice(0, start) + sessionMarkdown + ta.value.slice(ta.selectionEnd);
+        valueRef.current = nextValue;
+        setValue(nextValue);
+        setHistoryMenuOpen(false);
+        updateAtQuery(nextValue, start + sessionMarkdown.length);
+        requestAnimationFrame(() => {
+          ta.focus();
+          ta.setSelectionRange(start + sessionMarkdown.length, start + sessionMarkdown.length);
+        });
+        return;
+      }
+
       // A dictation tool that pastes and then restores the clipboard can write
       // it during this event; Chrome then drops its own insertion (#1513). When
       // no input followed the paste, insert the text the event delivered.
@@ -1623,7 +1644,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       ta.focus();
       ta.setSelectionRange(start + markdown.length, start + markdown.length);
     });
-  }, [compact, processImageFiles, updateAtQuery]);
+  }, [compact, onResolveSessionTitle, processImageFiles, updateAtQuery]);
 
   useEffect(() => {
     if (slashQuery === null) {
