@@ -148,7 +148,7 @@ export interface SessionTreeProps {
 const OVERSCAN_PX = 240;
 /** How often relative times ("5m") move on while nothing else re-renders. */
 const CLOCK_TICK_MS = 60_000;
-const DELETE_TITLE_MAX = 22;
+export const DELETE_TITLE_MAX = 22;
 
 /**
  * A session's display title: its stored name, else its first message (an
@@ -160,7 +160,7 @@ export function sessionRowTitle(session: SessionInfo): string {
   return session.name || displayFirstMessage.slice(0, 50) || session.id.slice(0, 12);
 }
 
-function isImeKey(event: ReactKeyboardEvent): boolean {
+export function isImeKey(event: ReactKeyboardEvent): boolean {
   return event.nativeEvent.isComposing || event.keyCode === 229;
 }
 
@@ -717,7 +717,7 @@ const SessionRowView = memo(function SessionRowView({
   );
 });
 
-function RenameInput({
+export function RenameInput({
   initialValue,
   label,
   maxLength,

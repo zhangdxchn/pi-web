@@ -1,16 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FocusEvent, type MouseEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FocusEvent, type MouseEvent as ReactMouseEvent } from "react";
 import type { ActivityGroup, ActivityRow } from "@/lib/session-activity";
+import type { SessionFamily } from "@/lib/session-family";
 import { getVisibleRowIndices, type SidebarLayout } from "@/lib/session-tree";
 import { isPlainActivation, sessionDeepLink } from "@/lib/session-links";
 import { formatShortRelativeTime } from "@/lib/i18n/format";
 import { useI18n } from "@/hooks/useI18n";
 import { useScrollbarVisibility } from "@/hooks/useScrollbarVisibility";
-import { sessionRowTitle } from "./SessionTree";
-import { SpinnerIcon } from "./SidebarIcons";
+import type { SidebarMenuAnchor } from "./SidebarMenu";
+import { DeleteConfirm, DELETE_TITLE_MAX, isImeKey, RenameInput, sessionRowTitle } from "./SessionTree";
+import { MoreIcon, SpinnerIcon } from "./SidebarIcons";
 
 type ActivitySessionRow = Extract<ActivityRow, { kind: "session" }>;
+
+function anchorOf(button: HTMLElement): SidebarMenuAnchor {
+  const rect = button.getBoundingClientRect();
+  return { kind: "rect", rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }, align: "end" };
+}
 
 const GROUP_LABELS: Record<ActivityGroup, string> = {
   priority: "sidebar.activityPriority",
@@ -29,14 +36,40 @@ export function activityRowOffsets(rows: readonly ActivityRow[], layout: Sidebar
   return offsets;
 }
 
-/** A chronological, virtualized view of the same session families as the project tree. */
-export function SessionActivity({ rows, layout, loading, error, onSelect }: {
+export interface SessionActivityProps {
   rows: ActivityRow[];
   layout: SidebarLayout;
   loading: boolean;
   error: string | null;
   onSelect(row: ActivitySessionRow): void;
-}) {
+  activeMenuRowKey?: string | null;
+  renamingRootId?: string | null;
+  confirmDeleteRootId?: string | null;
+  onOpenRowMenu?(row: ActivitySessionRow, anchor: SidebarMenuAnchor, opener: HTMLElement): void;
+  onRowContextMenu?(row: ActivitySessionRow, event: ReactMouseEvent): void;
+  onRenameCommit?(family: SessionFamily, value: string): void;
+  onRenameCancel?(): void;
+  onDeleteConfirm?(family: SessionFamily, event?: { shiftKey?: boolean }): void;
+  onDeleteCancel?(): void;
+}
+
+/** A chronological, virtualized view of the same session families as the project tree. */
+export function SessionActivity({
+  rows,
+  layout,
+  loading,
+  error,
+  onSelect,
+  activeMenuRowKey = null,
+  renamingRootId = null,
+  confirmDeleteRootId = null,
+  onOpenRowMenu,
+  onRowContextMenu,
+  onRenameCommit,
+  onRenameCancel,
+  onDeleteConfirm,
+  onDeleteCancel,
+}: SessionActivityProps) {
   const { locale, t } = useI18n();
   const scrollRef = useRef<HTMLDivElement>(null);
   useScrollbarVisibility(scrollRef);
@@ -72,9 +105,20 @@ export function SessionActivity({ rows, layout, loading, error, onSelect }: {
 
   const offsets = useMemo(() => activityRowOffsets(rows, layout), [rows, layout]);
   const focusedIndex = focusedKey ? rows.findIndex((row) => row.key === focusedKey) : -1;
+  const pinnedIndices = useMemo(() => {
+    const indices: number[] = [];
+    if (focusedIndex >= 0) indices.push(focusedIndex);
+    rows.forEach((row, index) => {
+      if (row.key === activeMenuRowKey) indices.push(index);
+      if (row.kind === "session" && (row.family.root.id === renamingRootId || row.family.root.id === confirmDeleteRootId)) {
+        indices.push(index);
+      }
+    });
+    return indices;
+  }, [rows, focusedIndex, activeMenuRowKey, renamingRootId, confirmDeleteRootId]);
   const visible = useMemo(() => loading ? [] : getVisibleRowIndices(
-    offsets, scrollTop, viewportHeight, OVERSCAN_PX, focusedIndex >= 0 ? [focusedIndex] : [],
-  ), [loading, offsets, scrollTop, viewportHeight, focusedIndex]);
+    offsets, scrollTop, viewportHeight, OVERSCAN_PX, pinnedIndices,
+  ), [loading, offsets, scrollTop, viewportHeight, pinnedIndices]);
   const onScroll = useCallback(() => {
     if (frameRef.current !== null) return;
     frameRef.current = requestAnimationFrame(() => {
@@ -102,6 +146,70 @@ export function SessionActivity({ rows, layout, loading, error, onSelect }: {
             const style = { top: offsets[index], height: offsets[index + 1] - offsets[index] };
             if (row.kind === "header") return <div key={row.key} className="session-tree-row session-activity-header" role="heading" aria-level={2} style={style} data-activity-row-key={row.key}>{t(GROUP_LABELS[row.group])}</div>;
             const title = sessionRowTitle(row.family.root);
+            const isConfirming = row.family.root.id === confirmDeleteRootId;
+            const isRenaming = row.family.root.id === renamingRootId;
+            const menuOpen = row.key === activeMenuRowKey;
+            const rowClass = [
+              "session-tree-row",
+              "session-activity-row",
+              row.selected ? "is-selected" : "",
+              menuOpen ? "is-menu-open" : "",
+              isConfirming ? "is-confirming" : "",
+              isRenaming ? "is-renaming" : "",
+            ].filter(Boolean).join(" ");
+
+            if (isConfirming && onDeleteConfirm && onDeleteCancel) {
+              const shortTitle = title.slice(0, DELETE_TITLE_MAX) + (title.length > DELETE_TITLE_MAX ? "…" : "");
+              return (
+                <div
+                  key={row.key}
+                  className={rowClass}
+                  style={style}
+                  data-activity-row-key={row.key}
+                  data-row-key={row.key}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Escape" || isImeKey(event)) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onDeleteCancel();
+                  }}
+                >
+                  <DeleteConfirm
+                    label={t("sidebar.deleteSession", { title: shortTitle })}
+                    deleteLabel={t("sidebar.delete")}
+                    cancelLabel={t("sidebar.cancel")}
+                    onConfirm={(event) => {
+                      event.stopPropagation();
+                      onDeleteConfirm(row.family, event);
+                    }}
+                    onCancel={(event) => {
+                      event.stopPropagation();
+                      onDeleteCancel();
+                    }}
+                  />
+                </div>
+              );
+            }
+
+            if (isRenaming && onRenameCommit && onRenameCancel) {
+              return (
+                <div
+                  key={row.key}
+                  className={rowClass}
+                  style={style}
+                  data-activity-row-key={row.key}
+                  data-row-key={row.key}
+                >
+                  <RenameInput
+                    initialValue={title}
+                    label={t("sidebar.rename")}
+                    onCommit={(value) => onRenameCommit(row.family, value)}
+                    onCancel={() => onRenameCancel()}
+                  />
+                </div>
+              );
+            }
+
             const status = row.awaiting
               ? <span className="session-tree-awaiting" role="img" aria-label={t("sidebar.agentAwaitingInput")} />
               : row.running ? <SpinnerIcon size={12} label={t("sidebar.agentRunning")} />
@@ -116,15 +224,41 @@ export function SessionActivity({ rows, layout, loading, error, onSelect }: {
               </span>
               {row.family.root.lastMessagePreview && <span className="session-activity-preview">{row.family.root.lastMessagePreview}</span>}
             </>;
-            const select = (event: MouseEvent<HTMLAnchorElement>) => {
+            const select = (event: ReactMouseEvent<HTMLAnchorElement>) => {
               if (!isPlainActivation(event)) return;
               event.preventDefault();
               onSelect(row);
             };
-            return <div key={row.key} className={`session-tree-row session-activity-row${row.selected ? " is-selected" : ""}`} style={style} data-activity-row-key={row.key}>
+            return <div
+              key={row.key}
+              className={rowClass}
+              style={style}
+              data-activity-row-key={row.key}
+              data-row-key={row.key}
+              onContextMenu={onRowContextMenu ? (event) => onRowContextMenu(row, event) : undefined}
+            >
               {row.family.root.transient
                 ? <button type="button" className="session-activity-main" aria-current={row.selected ? "true" : undefined} onClick={() => onSelect(row)}>{content}</button>
                 : <a className="session-activity-main" href={sessionDeepLink(row.family.root.id)} aria-current={row.selected ? "true" : undefined} onClick={select}>{content}</a>}
+              {!row.family.root.transient && onOpenRowMenu && (
+                <span className="session-tree-actions">
+                  <button
+                    type="button"
+                    className={`session-tree-action session-tree-more-action${menuOpen ? " is-active" : ""}`}
+                    aria-label={t("sidebar.moreActions")}
+                    title={t("sidebar.moreActions")}
+                    aria-haspopup="menu"
+                    aria-expanded={menuOpen}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      const button = event.currentTarget;
+                      onOpenRowMenu(row, anchorOf(button), button);
+                    }}
+                  >
+                    <MoreIcon size={14} />
+                  </button>
+                </span>
+              )}
             </div>;
           })}
         </div>}

@@ -51,7 +51,7 @@ export const PINNED_MORE_KEY = "pinned";
  * (`customName`, from its group menu's Rename…), else its folder's name.
  */
 export interface SidebarProject { key: string; root: string; name: string; customName: string | null; pinned: boolean; current: boolean }
-export interface SidebarFamilyStatus { running: boolean; awaiting: boolean; unread: boolean; selected: boolean; transient: boolean }
+export interface SidebarFamilyStatus { running: boolean; awaiting: boolean; unread: boolean; selected: boolean; transient: boolean; pinned?: boolean }
 
 // A folded header's counts follow its rows' right column: a family awaiting
 // input counts as awaiting, not running.

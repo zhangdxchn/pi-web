@@ -33,7 +33,44 @@ test("shows the priority heading, project, latest text and accessible status", (
 test("activity rows stay virtualized and have a separate mobile height", () => {
   const rows = buildSessionActivityRows(input(Array.from({ length: 1000 }, (_, i) => session(`s${i}`, i))));
   const html = render(rows);
-  assert.ok((html.match(/class="session-tree-row session-activity-row/g) ?? []).length < 30);
+  assert.ok((html.match(/class="session-tree-row[^"]*session-activity-row/g) ?? []).length < 30);
   assert.equal(activityRowOffsets(rows, "desktop")[2] - activityRowOffsets(rows, "desktop")[1], 68);
   assert.equal(activityRowOffsets(rows, "mobile")[2] - activityRowOffsets(rows, "mobile")[1], 82);
+});
+
+test("renders more actions button and marks open menu row", () => {
+  const rows = buildSessionActivityRows(input([session("s1", 1, { name: "Test Session" })]));
+  const htmlClosed = render(rows, { onOpenRowMenu() {} });
+  assert.match(htmlClosed, /session-tree-more-action/);
+  assert.match(htmlClosed, /aria-label="More actions"/);
+  assert.match(htmlClosed, /data-row-key="activity-session:s1"/);
+  assert.doesNotMatch(htmlClosed, /is-menu-open/);
+
+  const htmlOpen = render(rows, { onOpenRowMenu() {}, activeMenuRowKey: "activity-session:s1" });
+  assert.match(htmlOpen, /is-menu-open/);
+  assert.match(htmlOpen, /session-tree-more-action is-active/);
+  assert.match(htmlOpen, /aria-expanded="true"/);
+});
+
+test("inline rename mode swaps session content for rename field", () => {
+  const rows = buildSessionActivityRows(input([session("s1", 1, { name: "Renamable" })]));
+  const html = render(rows, {
+    renamingRootId: "s1",
+    onRenameCommit() {},
+    onRenameCancel() {},
+  });
+  assert.match(html, /is-renaming/);
+  assert.match(html, /class="session-tree-rename"[^>]*value="Renamable"/);
+});
+
+test("inline delete confirmation mode renders DeleteConfirm", () => {
+  const rows = buildSessionActivityRows(input([session("s1", 1, { name: "Deletable" })]));
+  const html = render(rows, {
+    confirmDeleteRootId: "s1",
+    onDeleteConfirm() {},
+    onDeleteCancel() {},
+  });
+  assert.match(html, /is-confirming/);
+  assert.match(html, /session-tree-confirm-delete/);
+  assert.match(html, /session-tree-confirm-cancel/);
 });

@@ -64,12 +64,13 @@
   right: var(--session-tree-inset-right);
   left: var(--session-tree-inset-left);
   border-radius: 7px;
+  cursor: pointer;
 }
 
 .session-activity-row:hover { background: var(--bg-hover); }
 .session-activity-row.is-selected { background: var(--bg-selected); }
 
-.session-activity-row.is-selected::before {
+.session-activity-row.is-selected:not(.is-confirming)::before {
   content: "";
   position: absolute;
   left: 0;
@@ -78,6 +79,28 @@
   width: 3px;
   border-radius: 0 2px 2px 0;
   background: var(--accent);
+}
+
+.session-tree.is-mobile .session-activity-row.is-selected:not(.is-confirming)::before {
+  top: 16px;
+  bottom: 16px;
+}
+
+.session-activity-row.is-confirming {
+  gap: 5px;
+  padding: 0 10px;
+  background: rgba(239, 68, 68, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.35);
+  cursor: default;
+}
+
+.session-activity-row.is-renaming {
+  padding: 0 10px;
+  cursor: default;
+}
+
+.session-activity-row .session-tree-actions {
+  margin-right: 4px;
 }
 
 .session-activity-main {
@@ -460,14 +483,19 @@ a.session-tree-main {
 }
 
 .session-tree .session-tree-session.is-selected .session-tree-action:hover,
-.session-tree .session-tree-session.is-selected .session-tree-action.is-active {
+.session-tree .session-tree-session.is-selected .session-tree-action.is-active,
+.session-tree .session-activity-row.is-selected .session-tree-action:hover,
+.session-tree .session-activity-row.is-selected .session-tree-action.is-active {
   background: var(--bg-hover);
 }
 
 /* Desktop: ⋯ (and archive) on hover; ⋯ alone on the selected row or while its menu is open. */
 .session-tree-session:hover .session-tree-action,
 .session-tree-session.is-selected .session-tree-more-action,
-.session-tree-session.is-menu-open .session-tree-more-action {
+.session-tree-session.is-menu-open .session-tree-more-action,
+.session-activity-row:hover .session-tree-action,
+.session-activity-row.is-selected .session-tree-more-action,
+.session-activity-row.is-menu-open .session-tree-more-action {
   display: flex;
 }
 
@@ -491,7 +519,8 @@ a.session-tree-main {
  * alone so a browser without :has() drops only that rule; it gets the
  * :focus-within fallback in the @supports block after the group rules.
  */
-.session-tree-session:has(:focus-visible) .session-tree-action {
+.session-tree-session:has(:focus-visible) .session-tree-action,
+.session-activity-row:has(:focus-visible) .session-tree-action {
   display: flex;
 }
 
@@ -762,6 +791,7 @@ a.session-tree-main {
 
 @supports not selector(:has(*)) {
   .session-tree-session:focus-within .session-tree-action,
+  .session-activity-row:focus-within .session-tree-action,
   .session-tree-group:focus-within .session-tree-group-actions {
     display: flex;
   }
