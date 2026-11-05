@@ -17,6 +17,7 @@ import type { SessionUiStateRequest } from "./session-ui-state-shared";
 
 export type SessionMenuActionId =
   | "open-new-tab"
+  | "copy-deeplink"
   | "pin"
   | "unpin"
   | "rename"
@@ -43,12 +44,14 @@ export function sessionMenuEntries(
 ): SessionMenuEntry[] {
   if (status.transient) return [];
   const openNewTab: SessionMenuEntry = { kind: "action", id: "open-new-tab", shortcut: "T" };
+  const copyDeepLink: SessionMenuEntry = { kind: "action", id: "copy-deeplink", shortcut: "C" };
   if (context === "archive") {
     return [
       { kind: "action", id: "unarchive", shortcut: "A" },
       { kind: "action", id: "pin", shortcut: "P" },
       { kind: "action", id: "rename", shortcut: "R" },
       { kind: "action", id: "fork", shortcut: "F" },
+      copyDeepLink,
       openNewTab,
       { kind: "separator" },
       { kind: "action", id: "delete", shortcut: "D" },
@@ -58,6 +61,7 @@ export function sessionMenuEntries(
     { kind: "action", id: context === "pinned" ? "unpin" : "pin", shortcut: "P" },
     { kind: "action", id: "rename", shortcut: "R" },
     { kind: "action", id: "fork", shortcut: "F" },
+    copyDeepLink,
     { kind: "action", id: status.unread ? "mark-read" : "mark-unread", shortcut: "U" },
     // A running family would come straight back: archiving waits for the run.
     status.running

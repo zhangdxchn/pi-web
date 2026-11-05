@@ -19,6 +19,7 @@ const appLinkSchemes = [
   "obsidian", "logseq", "notion",
   "vscode", "vscode-insiders", "cursor", "zed", "jetbrains",
   "zoommtg", "zoomus", "msteams", "slack",
+  "pi", "pi-web", "codex",
 ];
 const appLinkPattern = new RegExp(`^(?:${appLinkSchemes.join("|")}):`, "i");
 

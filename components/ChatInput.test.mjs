@@ -12,6 +12,7 @@ const jiti = createJiti(import.meta.url, {
 const React = await jiti.import("react");
 const { renderToStaticMarkup } = await jiti.import("react-dom/server");
 const { ChatInput, ModelErrorBanner, ModelScopeWarningBanner, RUN_END_CLICK_GUARD_MS, autoGrowTextarea, canClearBuiltinCommandInput, canRestoreUserMessage, canRunBuiltinSlashCommandWhileStreaming, cycleListIndex, filterModelOptions, getUpwardMenuMaxHeight, getUserMessageText, getUserMessageDraftImages, isExactSlashCommand, isRunEndStrayClick, modelSupportsImageInput, offersBuiltinSlashCommandWhileStreaming, replaceLinksWithMarkdown, readImageFile, replaceTextareaRange, stacksComposerLayout, submitsSlashCommandOnEnter } = await jiti.import("./ChatInput.tsx");
+const { replaceSessionDeepLinksWithMarkdown } = await jiti.import("@/lib/session-links");
 const { isBareMcpCommand } = await jiti.import("@/lib/mcp-command");
 const { ModelSelector } = await jiti.import("./ModelSelector.tsx");
 // As ChatInput.tsx imports it: on Windows jiti loads "@/lib/draft-store.ts"
@@ -240,6 +241,8 @@ test("a plain-text paste the browser dropped is inserted from the event's own te
       setTimeout(callback, delay) { timers.push([callback, delay]); },
       replaceTextareaRange(ta, start, end, value) { inserted.push([start, end, value]); },
       replaceLinksWithMarkdown,
+      replaceSessionDeepLinksWithMarkdown,
+      onResolveSessionTitle: undefined,
       DOMParser: class {
         parseFromString() {
           return {
@@ -274,6 +277,8 @@ test("a plain-text paste the browser dropped is inserted from the event's own te
   assert.deepEqual(paste({ text: "rich", html: "<b>rich</b>" }).inserted, [[2, 5, "rich"]]);
   // The link path takes the paste over itself: nothing to recover.
   assert.deepEqual(paste({ text: "rich", html: "<a>rich</a>", links: [["rich", "https://example.com"]] }), { inserted: [], prevented: true, pending: null });
+  // A session deeplink takes over the paste, prevents default, and inserts markdown.
+  assert.deepEqual(paste({ text: "pi://sessions/01a1aa7f-30e4" }), { inserted: [], prevented: true, pending: null });
   assert.deepEqual(paste({ text: "", html: "" }).inserted, []);
   assert.deepEqual(paste({ text: "gone", connected: false }).inserted, []);
 });

@@ -4,7 +4,8 @@ import { useEffect, useImperativeHandle, useLayoutEffect, useState, useCallback,
 import type { SessionInfo } from "@/lib/types";
 import { listSessionFamilies, type SessionFamily, isHiddenRelation } from "@/lib/session-family";
 import { dispatchSessionRowContextMenu } from "@/lib/session-row-context-menu";
-import { newSessionDeepLink, sessionDeepLink } from "@/lib/session-links";
+import { newSessionDeepLink, sessionCanonicalDeepLink, sessionDeepLink } from "@/lib/session-links";
+import { copyText } from "@/lib/clipboard";
 import { getProjectActivity, getRecentProjects } from "@/lib/project-groups";
 import { workspaceKeyOf } from "@/lib/workspace-memory";
 import {
@@ -104,6 +105,7 @@ import {
   DotOutlineIcon,
   EyeIcon,
   FolderIcon,
+  LinkIcon,
   MessageIcon,
   MoreIcon,
   ForkIcon,
@@ -336,6 +338,7 @@ const SIDEBAR_HEADER_HEIGHT = 36;
 
 const SESSION_ACTION_LABEL_KEYS: Record<SessionMenuActionId, string> = {
   "open-new-tab": "sidebar.openInNewTab",
+  "copy-deeplink": "sidebar.copyDeepLink",
   pin: "sidebar.pin",
   unpin: "sidebar.unpin",
   rename: "sidebar.rename",
@@ -350,6 +353,7 @@ const SESSION_ACTION_LABEL_KEYS: Record<SessionMenuActionId, string> = {
 function sessionActionIcon(id: SessionMenuActionId): ReactNode {
   switch (id) {
     case "open-new-tab": return <OpenInNewTabIcon />;
+    case "copy-deeplink": return <LinkIcon />;
     case "pin": return <PinIcon />;
     case "unpin": return <PinOffIcon />;
     case "rename": return <PencilIcon />;
@@ -2040,10 +2044,19 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     window.open(sessionDeepLink(family.root.id), "_blank", "noopener,noreferrer");
   }, []);
 
+  const copyFamilyDeepLink = useCallback((family: SessionFamily) => {
+    if (family.root.transient) return;
+    const link = sessionCanonicalDeepLink(family.root.id);
+    void copyText(link).then(() => {
+      showToast(t("sidebar.linkCopied"));
+    });
+  }, [showToast, t]);
+
   const runSessionAction = (id: SessionMenuActionId, row: SessionRow, shiftKey: boolean) => {
     const { family } = row;
     switch (id) {
       case "open-new-tab": openFamilyInNewTab(family); break;
+      case "copy-deeplink": copyFamilyDeepLink(family); break;
       case "pin": setFamilyPinned(family, true); break;
       case "unpin": setFamilyPinned(family, false); break;
       case "rename": startRename(family); break;

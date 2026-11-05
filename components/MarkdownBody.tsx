@@ -9,8 +9,10 @@ import { encodeFilePathForApi } from "@/lib/file-paths";
 import { isAudioPath, isVideoPath } from "@/lib/file-types";
 import { isExternalMarkdownHref, jumpToMarkdownFragment, markdownAppUrlTransform, markdownDocumentRehypePlugins, markdownRehypePlugins, markdownRemarkPlugins, markdownTextLayoutRemarkPlugins, markdownUrlTransform, markdownUserRemarkPlugins, normalizeDisplayMath } from "@/lib/markdown";
 import { splitMarkdownBlocks } from "@/lib/markdown-blocks";
+import { parseSessionDeepLink } from "@/lib/session-links";
 import { ImagePreview } from "./ImagePreview";
 import { MermaidBlock, CodeBlock } from "./MermaidBlock";
+import { SessionLinkPill } from "./SessionLinkPill";
 import { SvgBlock } from "./SvgBlock";
 
 const MarkdownLinkContext = createContext(false);
@@ -21,6 +23,10 @@ interface MarkdownBodyProps {
   isStreaming?: boolean;
   cwd?: string;
   onOpenFile?: (filePath: string, page?: number) => void;
+  /** A session link click opens or navigates to that session. */
+  onSelectSession?: (sessionId: string) => void;
+  /** Resolves the human-readable title for a linked session ID. */
+  onResolveSessionTitle?: (sessionId: string) => string | undefined;
   /** A document reader's own links: relative paths and `#headings` stay in the reader. */
   onNavigateLink?: (href: string) => void;
   /** Text the user typed: every line ending is a line break and raw HTML shows as text, as in pi's TUI. */
@@ -109,7 +115,7 @@ const MarkdownBlock = memo(function MarkdownBlock({ markdown, remarkPlugins, url
   );
 });
 
-export const MarkdownBody = memo(function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile, onNavigateLink, keepLineBreaks, keepTextLayout }: MarkdownBodyProps) {
+export const MarkdownBody = memo(function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile, onNavigateLink, onSelectSession, onResolveSessionTitle, keepLineBreaks, keepTextLayout }: MarkdownBodyProps) {
   const normalizedMarkdown = useMemo(() => normalizeDisplayMath(children), [children]);
   // A streaming reply grows by a few characters per chunk; parsing all of it
   // each time made a long reply quadratic. Its finished blocks keep their
@@ -154,6 +160,22 @@ export const MarkdownBody = memo(function MarkdownBody({ children, className, is
     a({ href, children, ...props }) {
       // `node` is react-markdown metadata, not a DOM attribute.
       delete props.node;
+      const targetSessionId = href ? parseSessionDeepLink(href) : null;
+      if (targetSessionId) {
+        return (
+          <MarkdownLinkContext.Provider value={true}>
+            <SessionLinkPill
+              sessionId={targetSessionId}
+              href={href}
+              label={typeof children === "string" ? children : undefined}
+              onSelect={onSelectSession}
+              resolveTitle={onResolveSessionTitle}
+            >
+              {children}
+            </SessionLinkPill>
+          </MarkdownLinkContext.Provider>
+        );
+      }
       if (onNavigateLink && href && !isExternalMarkdownHref(href)) {
         // No href: a middle-click or "Open in new tab" would load the path on the app's own URL.
         const navigate = () => onNavigateLink(href);
@@ -229,7 +251,7 @@ export const MarkdownBody = memo(function MarkdownBody({ children, className, is
         </div>
       );
     },
-  }), [cwd, isStreaming, onOpenFile, onNavigateLink]);
+  }), [cwd, isStreaming, onOpenFile, onNavigateLink, onSelectSession, onResolveSessionTitle]);
 
   return (
     <div className={["markdown-body", className].filter(Boolean).join(" ")}>

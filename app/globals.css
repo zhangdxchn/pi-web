@@ -1269,6 +1269,42 @@ pre, code {
 }
 .markdown-body a:hover { text-decoration-color: var(--accent); }
 .markdown-body a[role="link"] { cursor: pointer; }
+
+.session-link-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  margin: 0 2px;
+  border-radius: 5px;
+  background: var(--bg-hover);
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-size: 0.9em;
+  font-weight: 500;
+  text-decoration: none !important;
+  vertical-align: baseline;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  cursor: pointer;
+}
+.session-link-pill:hover {
+  background: var(--bg-selected);
+  border-color: var(--accent);
+  color: var(--accent);
+  text-decoration: none !important;
+}
+.session-link-pill-icon {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.95em;
+  opacity: 0.85;
+}
+.session-link-pill-title {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .markdown-body img {
   display: block;
   max-width: 100%;

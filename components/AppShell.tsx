@@ -30,6 +30,7 @@ import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useAudio } from "@/hooks/useAudio";
 import { copyText } from "@/lib/clipboard";
+import { sessionDeepLink } from "@/lib/session-links";
 import { getFileName } from "@/lib/file-paths";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
 import {
@@ -992,6 +993,15 @@ export function AppShell() {
       router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
     }
   }, [activeCwd, changeFileWorkspace, invalidateWorkspaceRestore, router, isMobile, newSessionCwd, selectedSession]);
+
+  const handleSelectSessionById = useCallback((sessionId: string) => {
+    const target = sessionsWithSelection.find((s) => s.id === sessionId);
+    if (target) {
+      handleSelectSession(target);
+    } else {
+      window.location.href = sessionDeepLink(sessionId);
+    }
+  }, [handleSelectSession, sessionsWithSelection]);
 
   const handleNewSession = useCallback((sessionId: string, cwd: string, projectKey?: string | null, options?: NewSessionOptions) => {
     invalidateWorkspaceRestore();
@@ -2816,6 +2826,8 @@ export function AppShell() {
             <ChatWindow
               key={sessionKey}
               session={selectedSession}
+              sessions={sessionsWithSelection}
+              onSelectSessionId={handleSelectSessionById}
               searchTarget={searchTarget?.sessionId === selectedSession?.id ? searchTarget : null}
               onSearchTargetHandled={handleSearchTargetHandled}
               initialScrollPosition={selectedSession ? sessionScrollPositionsRef.current.get(selectedSession.id) ?? null : null}
