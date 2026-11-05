@@ -109,6 +109,18 @@ export function BranchIcon(props: SidebarIconProps) {
   );
 }
 
+/** Git graph topology branches icon. */
+export function GitGraphIcon(props: SidebarIconProps) {
+  return (
+    <SidebarIcon {...props}>
+      <circle cx="6" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="18" cy="9" r="3" />
+      <path d="M6 9v6M18 12a9 9 0 0 1-9 9" />
+    </SidebarIcon>
+  );
+}
+
 /** Two branches from one stem: a row's "Fork" (BranchIcon stands for a worktree's branch). */
 export function ForkIcon(props: SidebarIconProps) {
   return (

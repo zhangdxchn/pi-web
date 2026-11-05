@@ -31,7 +31,7 @@ import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useAudio } from "@/hooks/useAudio";
 import { copyText } from "@/lib/clipboard";
 import { getFileName } from "@/lib/file-paths";
-import { FolderIcon, TerminalIcon } from "./SidebarIcons";
+import { FolderIcon, TerminalIcon, GitGraphIcon } from "./SidebarIcons";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
 import {
   claimExtensionAttentionNotification,
@@ -3458,6 +3458,38 @@ export function AppShell() {
                 >
                   <span style={{ display: "inline-flex", color: "var(--text-muted)", flexShrink: 0 }}><TerminalIcon size={14} /></span>
                   <span>{translate("terminal.open")}</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={!activeCwd}
+                  onClick={() => {
+                    if (activeCwd) {
+                      setRightPanelOpen(true);
+                      setActiveFileTabId("git-graph");
+                    }
+                    setPanelPlusMenuOpen(false);
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    width: "100%",
+                    padding: "7px 10px",
+                    background: "none",
+                    border: "none",
+                    borderRadius: 5,
+                    color: "var(--text)",
+                    fontSize: 12,
+                    cursor: activeCwd ? "pointer" : "not-allowed",
+                    opacity: activeCwd ? 1 : 0.45,
+                    textAlign: "left",
+                  }}
+                  onMouseEnter={(e) => { if (activeCwd) e.currentTarget.style.background = "var(--bg-hover)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+                >
+                  <span style={{ display: "inline-flex", color: "var(--text-muted)", flexShrink: 0 }}><GitGraphIcon size={14} /></span>
+                  <span>{translate("gitGraph.title")}</span>
                 </button>
               </div>
             )}
