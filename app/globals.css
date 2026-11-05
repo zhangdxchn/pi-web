@@ -1791,10 +1791,14 @@ pre, code {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 40px;
-  padding: 7px 10px;
+  min-height: calc(40px + env(safe-area-inset-top));
+  padding-top: max(7px, env(safe-area-inset-top));
+  padding-right: max(10px, env(safe-area-inset-right));
+  padding-bottom: 7px;
+  padding-left: max(10px, env(safe-area-inset-left));
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
+  box-sizing: border-box;
 }
 .mermaid-zoom-title {
   min-width: 0;
@@ -1875,9 +1879,13 @@ pre, code {
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  padding: 24px;
+  padding-top: 24px;
+  padding-right: max(24px, env(safe-area-inset-right));
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
+  padding-left: max(24px, env(safe-area-inset-left));
   background: var(--bg);
   -webkit-overflow-scrolling: touch;
+  box-sizing: border-box;
 }
 .mermaid-zoom-canvas {
   padding: 12px;
@@ -1896,7 +1904,10 @@ pre, code {
 
 @media (max-width: 480px) {
   .mermaid-zoom-toolbar {
-    padding-inline: 8px;
+    padding-top: max(7px, env(safe-area-inset-top));
+    padding-right: max(8px, env(safe-area-inset-right));
+    padding-bottom: 7px;
+    padding-left: max(8px, env(safe-area-inset-left));
   }
 
   .mermaid-zoom-title {
@@ -1904,7 +1915,31 @@ pre, code {
   }
 
   .mermaid-zoom-viewport {
-    padding: 12px;
+    padding-top: 12px;
+    padding-right: max(12px, env(safe-area-inset-right));
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    padding-left: max(12px, env(safe-area-inset-left));
+  }
+}
+
+@media (pointer: coarse) {
+  .mermaid-zoom-stepper {
+    height: 28px;
+  }
+  .mermaid-zoom-stepper button {
+    width: 28px;
+    height: 26px;
+  }
+  .mermaid-zoom-value {
+    min-width: 44px;
+    height: 26px;
+    line-height: 26px;
+    font-size: 11px;
+  }
+  .mermaid-zoom-icon-button {
+    flex: 0 0 28px;
+    width: 28px;
+    height: 28px;
   }
 }
 
