@@ -2864,7 +2864,6 @@ export function AppShell() {
           </button>
           {sessionDisplayName && !isMobile && (
             <>
-              <div style={{ width: 1, height: 16, background: "var(--border)", margin: "0 8px", flexShrink: 0 }} />
               <div
                 style={{
                   display: "flex",
