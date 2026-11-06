@@ -21,8 +21,8 @@ import { checkModelContext } from "./model-context.mjs";
 import { checkModelSelector } from "./model-selector.mjs";
 import { checkFilesPlacement, showSidebarSessions } from "./sidebar.mjs";
 import { checkSessionNavigation } from "./session-navigation.mjs";
+import { checkSessionActivity, checkSessionActivityCrossProject } from "./session-activity.mjs";
 import { checkUnreadMarkers } from "./session-unread.mjs";
-import { checkSessionActivity } from "./session-activity.mjs";
 import { checkProjectNavigation, createProjectNavigationFixtures } from "./project-navigation.mjs";
 import { checkGitGraphI18n } from "./git-graph-i18n.mjs";
 import { checkGitGraphSearch } from "./git-graph-search.mjs";
@@ -602,6 +602,7 @@ try {
   await checkOpenInApp({ browser, base, cwd: project, sessionId: RICH, artifacts });
   // The activity checks use their own contexts and run after project navigation.
   await checkSessionActivity({ browser, base, artifacts, api, currentId: CODE_BACKGROUND, runningId: RICH, manualId: BRANCH });
+  await checkSessionActivityCrossProject({ browser, base, artifacts, api, currentId: CODE_BACKGROUND, currentFile: previewFile, other: projectNavigation });
   // The unread check uses its own contexts and restores its pin; run it last
   // so its sidebar's project-order bookkeeping cannot affect earlier checks.
   await checkUnreadMarkers({ browser, base, artifacts, api, post, pinnedId: BRANCH, groupId: RICH, currentId: CODE_BACKGROUND });

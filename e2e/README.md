@@ -42,6 +42,7 @@ Coverage:
   General › File browser brings back the Sessions | Files tabs and returns,
   without remounting the file tree (its file search keeps its query).
 - Project Sections (`project-sections.mjs`, run separately): desktop creation, rename, ordering, menu moves, pointer drag, fold persistence and reload; mobile Chromium long-press drag, menu moves and deletion; pinned membership, cross-browser state, three languages and unchanged session files. Unread families stay in their project or the pinned section, and folded Sections summarize their projects' unread activity. Native devices still need real-device verification.
+- The activity view (`session-activity.mjs`, desktop and mobile) covers completed and unread notifications across tabs, then switches between projects and verifies the chat, URL, selected row, and file tree in both directions.
 - Unknown sessions and paths outside the fixture project are rejected.
 - Unread markers (`session-unread.mjs`, desktop and mobile) stay on the pinned or project row without duplicates. Folded headers summarize them. Reading syncs across tabs and keeps the row in place; the tests also cover manually marking a selected row unread, archive Undo and a simulated background completion.
 - Sidebar sessions open in browser tabs (`session-navigation.mjs`, desktop

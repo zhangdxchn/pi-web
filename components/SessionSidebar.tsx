@@ -304,6 +304,37 @@ interface ValidatedProject {
 
 type SessionRow = Extract<SidebarRow, { kind: "session" }>;
 
+function activityRowToSessionRow(
+  activityRow: Extract<ActivityRow, { kind: "session" }>,
+  projectByKey: Map<string, SidebarProject>,
+): SessionRow {
+  const root = activityRow.family.root;
+  const projectKey = workspaceKeyOf(root);
+  const project = projectByKey.get(projectKey) ?? {
+    key: projectKey,
+    root: root.projectRoot ?? root.cwd,
+    name: activityRow.projectName,
+    customName: null,
+    pinned: false,
+    current: false,
+  };
+  return {
+    kind: "session",
+    key: activityRow.key,
+    family: activityRow.family,
+    context: activityRow.pinned ? "pinned" : "group",
+    project,
+    status: {
+      running: activityRow.running,
+      awaiting: activityRow.awaiting,
+      unread: activityRow.unread,
+      pinned: activityRow.pinned,
+      selected: activityRow.selected,
+      transient: root.transient === true,
+    },
+  };
+}
+
 /**
  * The one popup menu of the sidebar; kept here, above the virtualized rows.
  * `askDelete`: a menu turned into its delete question (a group's "Delete all
@@ -1549,6 +1580,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     () => new Map(model.projects.map((project) => [project.key, project])),
     [model.projects],
   );
+  const activitySessionRows = useMemo(
+    () => activityRows.flatMap((row) => (row.kind === "session" ? [activityRowToSessionRow(row, projectByKey)] : [])),
+    [activityRows, projectByKey],
+  );
 
   // The project order is saved as projects turn up: a project without a place
   // renders at the top of its band, and saving it puts it at the top of the
@@ -1646,6 +1681,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // not mounted, so a moved row may need its header instead.
   const familyRowButton = useCallback((rootId: string, fallback?: () => HTMLElement | null): HTMLElement | null => {
     const panel = sessionsPanelRef.current;
+    const activityKey = CSS.escape(`activity-session:${rootId}`);
+    const activityButton = panel?.querySelector<HTMLElement>(`[data-row-key="${activityKey}"] .session-activity-main`);
+    if (activityButton && activityButton.getClientRects().length > 0) return activityButton;
     for (const context of ["pinned", "group", "archive"]) {
       const key = CSS.escape(`session:${context}:${rootId}`);
       const button = panel?.querySelector<HTMLElement>(`[data-row-key="${key}"] .session-tree-main`);
@@ -2201,6 +2239,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     openRowMenu(row, anchor, inRow ? active : null);
   }, [confirmDeleteRootId, loadSessions, openRowMenu, renamingRootId]);
 
+  const handleOpenActivityRowMenu = useCallback((row: Extract<ActivityRow, { kind: "session" }>, anchor: SidebarMenuAnchor, opener: HTMLElement) => {
+    openRowMenu(activityRowToSessionRow(row, projectByKey), anchor, opener);
+  }, [openRowMenu, projectByKey]);
+
+  const handleActivityRowContextMenu = useCallback((row: Extract<ActivityRow, { kind: "session" }>, event: ReactMouseEvent) => {
+    handleContextMenu(activityRowToSessionRow(row, projectByKey), event);
+  }, [handleContextMenu, projectByKey]);
+
   const treeSelectionInput = useMemo(() => ({
     sessions: allSessions,
     uiState,
@@ -2354,7 +2400,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
   // A row whose menu is open can leave the tree (archived or deleted in
   // another window): its menu goes with it.
-  const visibleRows = archiveView ? archiveRows : model.rows;
+  const visibleRows = archiveView
+    ? archiveRows
+    : activityView
+      ? activitySessionRows
+      : model.rows;
   useEffect(() => {
     if (menu?.kind === "row" && !visibleRows.some((row) => row.key === menu.row.key)) setMenu(null);
     if (menu?.kind === "archive-group" && !visibleRows.some((row) => row.key === `archive:${menu.project.key}`)) setMenu(null);
@@ -3234,7 +3284,25 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             </div>
             {activityMounted && (
               <div className="sidebar-sessions-view" hidden={!activityView || archiveMotion.archiveMounted} inert={!activityView || archiveMotion.archiveMounted}>
-                <SessionActivity rows={activityRows} layout={treeLayout} loading={treeLoading} error={error} onSelect={handleSelectActivity} />
+                <SessionActivity
+                  rows={activityRows}
+                  layout={treeLayout}
+                  loading={treeLoading}
+                  error={error}
+                  onSelect={handleSelectActivity}
+                  activeMenuRowKey={activeMenuRowKey}
+                  renamingRootId={renamingRootId}
+                  confirmDeleteRootId={confirmDeleteRootId}
+                  onOpenRowMenu={handleOpenActivityRowMenu}
+                  onRowContextMenu={handleActivityRowContextMenu}
+                  onRenameCommit={(family, value) => { void commitRename(family, value); }}
+                  onRenameCancel={() => setRenamingRootId(null)}
+                  onDeleteConfirm={(family) => {
+                    setConfirmDeleteRootId(null);
+                    void performDelete(family);
+                  }}
+                  onDeleteCancel={() => setConfirmDeleteRootId(null)}
+                />
               </div>
             )}
             {/* Mounted while open and on its way out, inert then, so nothing

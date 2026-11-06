@@ -1,5 +1,5 @@
 import { listSessionFamilies, type SessionFamily } from "./session-family";
-import { familyIds, isFamilyArchived, projectNameOf } from "./session-tree";
+import { familyIds, isFamilyArchived, isFamilyPinned, projectNameOf } from "./session-tree";
 import { storedProjectName, type SessionUiState } from "./session-ui-state-shared";
 import type { SessionInfo } from "./types";
 import { workspaceKeyOf } from "./workspace-memory";
@@ -17,6 +17,7 @@ export type ActivityRow =
       unread: boolean;
       selected: boolean;
       retained: boolean;
+      pinned: boolean;
     };
 
 export interface SessionActivityInput {
@@ -59,10 +60,11 @@ export function buildSessionActivityRows(input: SessionActivityInput): ActivityR
     const key = workspaceKeyOf(family.root);
     const projectName = storedProjectName(input.uiState, key)
       ?? projectNameOf(family.root.projectRoot ?? family.root.cwd);
+    const pinned = isFamilyPinned(family, input.uiState, input.runningIds);
     const group = running || awaiting || unread || retained ? "priority" : dateGroup(family.latestModified, input.now);
     groups[group].push({
       kind: "session", key: `activity-session:${family.root.id}`, family, projectName,
-      running, awaiting, unread, selected, retained,
+      running, awaiting, unread, selected, retained, pinned,
     });
   }
 
